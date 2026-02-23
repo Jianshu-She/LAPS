@@ -1,0 +1,19 @@
+Benchmark: 2000 prompts, max_new_tokens=1, rate=inf req/s
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            2000 / 2000
+  failed:               0
+  total_duration:       4.75 s
+  total_input_tokens:   226698
+  prefill_throughput:   47696.9 tokens/s
+  request_throughput:   420.8 req/s
+  median_ttft:          4333.10 ms
+  mean_ttft:            4300.91 ms
+  p50_ttft:             4333.10 ms
+  p90_ttft:             4585.56 ms
+  p99_ttft:             4688.72 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results/no_cuda_graph_rateinf.json

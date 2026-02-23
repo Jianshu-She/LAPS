@@ -6,6 +6,7 @@ import asyncio
 import ipaddress
 import logging
 import random
+import time
 import urllib
 from http import HTTPStatus
 from itertools import chain
@@ -69,6 +70,32 @@ class MiniLoadBalancer:
             )
             self.enable_trace = False
 
+        # LAPS dynamic allocation state
+        self.enable_laps_alloc = router_args.enable_laps_alloc
+        if self.enable_laps_alloc:
+            n = len(self.prefill_urls)
+            if n < 2:
+                logger.warning(
+                    "[LAPS] Dynamic allocation requires >=2 prefill instances, disabling"
+                )
+                self.enable_laps_alloc = False
+            else:
+                mid = n // 2
+                self._laps_short_group = list(range(0, mid))
+                self._laps_long_group = list(range(mid, n))
+                self._laps_short_pending = 0
+                self._laps_long_pending = 0
+                self._laps_last_rebalance = 0.0
+                self._laps_threshold = router_args.laps_alloc_threshold
+                self._laps_rebalance_interval = router_args.laps_rebalance_interval_s
+                self._laps_rebalance_ratio = router_args.laps_rebalance_ratio
+                logger.info(
+                    f"[LAPS] Dynamic allocation enabled: "
+                    f"short_group={self._laps_short_group}, "
+                    f"long_group={self._laps_long_group}, "
+                    f"threshold={self._laps_threshold}"
+                )
+
     def _validate_router_args(self, router_args: RouterArgs):
         logger.warning(
             "\x1b[33mMiniLB is only for debugging purposes, it only supports random policy!\033[0m"
@@ -105,6 +132,77 @@ class MiniLoadBalancer:
             self.prefill_bootstrap_ports[pidx],
             self.decode_urls[didx],
         )
+
+    def _laps_classify(self, request_data: dict) -> str:
+        """Classify request as 'short' or 'long' based on estimated token count."""
+        tokens = _estimate_prompt_tokens(request_data)
+        if tokens == 0:
+            # Unknown length — route to lower-pressure group
+            if self._laps_short_pending <= self._laps_long_pending:
+                return "short"
+            return "long"
+        return "short" if tokens <= self._laps_threshold else "long"
+
+    def _laps_maybe_rebalance(self):
+        """Time-gated inline rebalance: move at most 1 instance between groups."""
+        now = time.monotonic()
+        if now - self._laps_last_rebalance < self._laps_rebalance_interval:
+            return
+
+        self._laps_last_rebalance = now
+        sp = max(self._laps_short_pending, 1)
+        lp = max(self._laps_long_pending, 1)
+        ratio = self._laps_rebalance_ratio
+
+        if sp > lp * ratio and len(self._laps_long_group) > 1:
+            moved = self._laps_long_group.pop()
+            self._laps_short_group.append(moved)
+            logger.info(
+                f"[LAPS] Rebalance: moved prefill[{moved}] long→short "
+                f"(short_pending={self._laps_short_pending}, long_pending={self._laps_long_pending})"
+            )
+        elif lp > sp * ratio and len(self._laps_short_group) > 1:
+            moved = self._laps_short_group.pop()
+            self._laps_long_group.append(moved)
+            logger.info(
+                f"[LAPS] Rebalance: moved prefill[{moved}] short→long "
+                f"(short_pending={self._laps_short_pending}, long_pending={self._laps_long_pending})"
+            )
+
+    def select_pair_laps(self, request_data: dict):
+        """Select prefill/decode pair using LAPS dynamic allocation.
+
+        Returns (prefill_url, bootstrap_port, decode_url, category).
+        """
+        self._laps_maybe_rebalance()
+        category = self._laps_classify(request_data)
+
+        if category == "short":
+            group = self._laps_short_group if self._laps_short_group else self._laps_long_group
+        else:
+            group = self._laps_long_group if self._laps_long_group else self._laps_short_group
+
+        pidx = group[random.randint(0, len(group) - 1)]
+        didx = random.randint(0, len(self.decode_urls) - 1)
+
+        if category == "short":
+            self._laps_short_pending += 1
+        else:
+            self._laps_long_pending += 1
+
+        return (
+            self.prefill_urls[pidx],
+            self.prefill_bootstrap_ports[pidx],
+            self.decode_urls[didx],
+            category,
+        )
+
+    def laps_request_done(self, category: str):
+        """Decrement the pending counter for the given category."""
+        if category == "short":
+            self._laps_short_pending = max(0, self._laps_short_pending - 1)
+        else:
+            self._laps_long_pending = max(0, self._laps_long_pending - 1)
 
     async def generate(
         self, modified_request, prefill_server, decode_server, endpoint
@@ -302,6 +400,26 @@ async def flush_cache():
     return Response(status_code=200)
 
 
+@app.get("/laps_status")
+async def laps_status():
+    if not lb or not lb.enable_laps_alloc:
+        return ORJSONResponse(content={"enabled": False})
+    return ORJSONResponse(
+        content={
+            "enabled": True,
+            "threshold": lb._laps_threshold,
+            "rebalance_interval_s": lb._laps_rebalance_interval,
+            "rebalance_ratio": lb._laps_rebalance_ratio,
+            "short_group": [lb.prefill_urls[i] for i in lb._laps_short_group],
+            "long_group": [lb.prefill_urls[i] for i in lb._laps_long_group],
+            "short_group_indices": lb._laps_short_group,
+            "long_group_indices": lb._laps_long_group,
+            "short_pending": lb._laps_short_pending,
+            "long_pending": lb._laps_long_pending,
+        }
+    )
+
+
 @app.get("/get_server_info")
 async def get_server_info():
     prefill_infos = []
@@ -386,7 +504,13 @@ async def get_model_info():
 
 @app.post("/generate")
 async def handle_generate_request(request_data: dict):
-    prefill_server, bootstrap_port, decode_server = lb.select_pair()
+    laps_category = None
+    if lb.enable_laps_alloc:
+        prefill_server, bootstrap_port, decode_server, laps_category = (
+            lb.select_pair_laps(request_data)
+        )
+    else:
+        prefill_server, bootstrap_port, decode_server = lb.select_pair()
 
     # Parse and transform prefill_server for bootstrap data
     parsed_url = urllib.parse.urlparse(prefill_server)
@@ -413,18 +537,28 @@ async def handle_generate_request(request_data: dict):
             }
         )
 
-    if request_data.get("stream", False):
-        return await lb.generate_stream(
-            modified_request, prefill_server, decode_server, "generate"
-        )
-    else:
-        return await lb.generate(
-            modified_request, prefill_server, decode_server, "generate"
-        )
+    try:
+        if request_data.get("stream", False):
+            return await lb.generate_stream(
+                modified_request, prefill_server, decode_server, "generate"
+            )
+        else:
+            return await lb.generate(
+                modified_request, prefill_server, decode_server, "generate"
+            )
+    finally:
+        if laps_category is not None:
+            lb.laps_request_done(laps_category)
 
 
 async def _forward_to_backend(request_data: dict, endpoint_name: str):
-    prefill_server, bootstrap_port, decode_server = lb.select_pair()
+    laps_category = None
+    if lb.enable_laps_alloc:
+        prefill_server, bootstrap_port, decode_server, laps_category = (
+            lb.select_pair_laps(request_data)
+        )
+    else:
+        prefill_server, bootstrap_port, decode_server = lb.select_pair()
 
     # Parse and transform prefill_server for bootstrap data
     parsed_url = urllib.parse.urlparse(prefill_server)
@@ -438,20 +572,24 @@ async def _forward_to_backend(request_data: dict, endpoint_name: str):
         }
     )
 
-    if request_data.get("stream", False):
-        return await lb.generate_stream(
-            modified_request,
-            prefill_server,
-            decode_server,
-            endpoint=endpoint_name,
-        )
-    else:
-        return await lb.generate(
-            modified_request,
-            prefill_server,
-            decode_server,
-            endpoint=endpoint_name,
-        )
+    try:
+        if request_data.get("stream", False):
+            return await lb.generate_stream(
+                modified_request,
+                prefill_server,
+                decode_server,
+                endpoint=endpoint_name,
+            )
+        else:
+            return await lb.generate(
+                modified_request,
+                prefill_server,
+                decode_server,
+                endpoint=endpoint_name,
+            )
+    finally:
+        if laps_category is not None:
+            lb.laps_request_done(laps_category)
 
 
 @app.post("/v1/chat/completions")
@@ -479,6 +617,51 @@ def _get_request_batch_size(request):
     if (input_ids := request.get("input_ids")) is not None:
         return None if isinstance(input_ids[0], int) else len(input_ids)
     return None
+
+
+def _estimate_prompt_tokens(request_data: dict) -> int:
+    """Estimate the number of prompt tokens from request data.
+
+    Uses exact count from input_ids, or chars//4 heuristic for text.
+    For batch requests, returns the max length across items.
+    Returns 0 if nothing recognized (caller should use random fallback).
+    """
+    # input_ids: exact token count
+    input_ids = request_data.get("input_ids")
+    if input_ids is not None:
+        if isinstance(input_ids, list) and len(input_ids) > 0:
+            if isinstance(input_ids[0], int):
+                return len(input_ids)
+            else:
+                # list-of-lists (batch)
+                return max(len(ids) for ids in input_ids)
+        return 0
+
+    # text: chars // 4 heuristic
+    text = request_data.get("text")
+    if text is not None:
+        if isinstance(text, str):
+            return len(text) // 4
+        elif isinstance(text, list):
+            return max((len(t) // 4 for t in text), default=0)
+        return 0
+
+    # messages (chat completions): sum content lengths // 4
+    messages = request_data.get("messages")
+    if messages is not None:
+        total_chars = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total_chars += len(content)
+            elif isinstance(content, list):
+                # multimodal content parts
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        total_chars += len(part.get("text", ""))
+        return total_chars // 4
+
+    return 0
 
 
 @app.get("/v1/models")

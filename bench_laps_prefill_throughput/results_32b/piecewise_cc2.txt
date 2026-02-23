@@ -1,0 +1,19 @@
+Benchmark: 500 prompts, max_new_tokens=1, concurrency=2
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            500 / 500
+  failed:               0
+  total_duration:       12.21 s
+  total_input_tokens:   51162
+  prefill_throughput:   4189.7 tokens/s
+  request_throughput:   40.9 req/s
+  median_ttft:          46.20 ms
+  mean_ttft:            48.78 ms
+  p50_ttft:             46.20 ms
+  p90_ttft:             57.40 ms
+  p99_ttft:             74.42 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_32b/piecewise_cc2.json

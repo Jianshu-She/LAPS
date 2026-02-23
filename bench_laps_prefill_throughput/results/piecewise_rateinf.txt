@@ -1,0 +1,19 @@
+Benchmark: 2000 prompts, max_new_tokens=1, rate=inf req/s
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            2000 / 2000
+  failed:               0
+  total_duration:       4.65 s
+  total_input_tokens:   226698
+  prefill_throughput:   48729.7 tokens/s
+  request_throughput:   429.9 req/s
+  median_ttft:          4195.34 ms
+  mean_ttft:            4157.84 ms
+  p50_ttft:             4195.34 ms
+  p90_ttft:             4469.59 ms
+  p99_ttft:             4555.31 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results/piecewise_rateinf.json

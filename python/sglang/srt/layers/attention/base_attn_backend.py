@@ -57,6 +57,22 @@ class AttentionBackend(ABC):
         """Get the fill value for padded seq lens. Typically, it is 0 or 1."""
         raise NotImplementedError()
 
+    def supports_batch_prefill_cuda_graph(self) -> bool:
+        """Check if this backend supports batch prefill CUDA graph."""
+        return False
+
+    def init_forward_metadata_capture_batch_prefill_cuda_graph(self, **kwargs):
+        """Init metadata for capturing a batch prefill CUDA graph."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support batch prefill CUDA graph"
+        )
+
+    def init_forward_metadata_replay_batch_prefill_cuda_graph(self, **kwargs):
+        """Init metadata for replaying a batch prefill CUDA graph."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support batch prefill CUDA graph"
+        )
+
     def get_verify_buffers_to_fill_after_draft(self):
         """
         Return buffers of verify attention kernels that needs to be filled after draft.

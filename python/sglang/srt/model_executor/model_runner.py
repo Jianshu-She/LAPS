@@ -2309,6 +2309,19 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         if not self.is_generation:
             kwargs["get_embedding"] = True
 
+        # Check batch prefill CUDA graph first (for multiple short sequences)
+        can_run_batch_prefill = (
+            self.piecewise_cuda_graph_runner is not None
+            and self.piecewise_cuda_graph_runner.can_run_batch_prefill(forward_batch)
+        )
+
+        if can_run_batch_prefill:
+            return (
+                self.piecewise_cuda_graph_runner.replay_batch_prefill(forward_batch, **kwargs),
+                True,
+            )
+
+        # Check single-sequence piecewise CUDA graph
         can_run_graph = (
             self.piecewise_cuda_graph_runner is not None
             and self.piecewise_cuda_graph_runner.can_run(forward_batch)

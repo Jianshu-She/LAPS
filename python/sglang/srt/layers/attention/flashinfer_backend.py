@@ -745,6 +745,112 @@ class FlashInferAttnBackend(AttentionBackend):
     def get_cuda_graph_seq_len_fill_value(self):
         return 1
 
+    def supports_batch_prefill_cuda_graph(self) -> bool:
+        return True
+
+    def init_forward_metadata_capture_batch_prefill_cuda_graph(
+        self,
+        bs: int,
+        seq_len: int,
+        req_pool_indices: torch.Tensor,
+        seq_lens: torch.Tensor,
+        extend_seq_lens: torch.Tensor,
+        extend_prefix_lens: torch.Tensor,
+        extend_start_loc: torch.Tensor,
+    ):
+        """
+        Initialize forward metadata for batch prefill CUDA graph capture.
+
+        This method prepares the attention backend for capturing a CUDA graph
+        with multiple sequences in a batch, each with uniform padded length.
+        """
+        num_tokens = bs * seq_len
+        prefill_wrappers = []
+
+        for i in range(self.num_wrappers):
+            prefill_wrappers.append(
+                BatchPrefillWithPagedKVCacheWrapper(
+                    self.workspace_buffer,
+                    "NHD",
+                    use_cuda_graph=True,
+                    backend=self.prefill_backend,
+                    qo_indptr_buf=self.qo_indptr[i][: bs + 1],
+                    paged_kv_indptr_buf=self.kv_indptr[i][: bs + 1],
+                    paged_kv_indices_buf=self.cuda_graph_kv_indices[i],
+                    paged_kv_last_page_len_buf=self.kv_last_page_len[:bs],
+                )
+            )
+
+        seq_lens_sum = seq_lens.sum().item()
+        self.indices_updater_prefill.update(
+            req_pool_indices,
+            seq_lens,
+            seq_lens.cpu(),
+            seq_lens_sum,
+            prefix_lens=extend_prefix_lens,
+            prefill_wrappers=prefill_wrappers,
+            use_ragged=False,
+            encoder_lens=None,
+            spec_info=None,
+        )
+
+        # Store for batch prefill
+        self.batch_prefill_cuda_graph_metadata = {
+            (bs, seq_len): prefill_wrappers
+        }
+        self.forward_metadata = PrefillMetadata(prefill_wrappers, False, False)
+
+    def init_forward_metadata_replay_batch_prefill_cuda_graph(
+        self,
+        bs: int,
+        seq_len: int,
+        req_pool_indices: torch.Tensor,
+        seq_lens: torch.Tensor,
+        extend_seq_lens: torch.Tensor,
+        extend_prefix_lens: torch.Tensor,
+        extend_start_loc: torch.Tensor,
+        seq_lens_cpu: Optional[torch.Tensor] = None,
+    ):
+        """
+        Initialize forward metadata for batch prefill CUDA graph replay.
+
+        This method prepares the attention backend for replaying a captured
+        batch prefill CUDA graph with updated input data.
+        """
+        key = (bs, seq_len)
+        if not hasattr(self, 'batch_prefill_cuda_graph_metadata'):
+            self.batch_prefill_cuda_graph_metadata = {}
+
+        if key not in self.batch_prefill_cuda_graph_metadata:
+            # If not captured, initialize the metadata
+            self.init_forward_metadata_capture_batch_prefill_cuda_graph(
+                bs=bs,
+                seq_len=seq_len,
+                req_pool_indices=req_pool_indices,
+                seq_lens=seq_lens,
+                extend_seq_lens=extend_seq_lens,
+                extend_prefix_lens=extend_prefix_lens,
+                extend_start_loc=extend_start_loc,
+            )
+            return
+
+        prefill_wrappers = self.batch_prefill_cuda_graph_metadata[key]
+        seq_lens_sum = seq_lens.sum().item()
+
+        self.indices_updater_prefill.update(
+            req_pool_indices[:bs],
+            seq_lens[:bs],
+            seq_lens_cpu[:bs] if seq_lens_cpu is not None else None,
+            seq_lens_sum,
+            prefix_lens=extend_prefix_lens[:bs],
+            prefill_wrappers=prefill_wrappers,
+            use_ragged=False,
+            encoder_lens=None,
+            spec_info=None,
+        )
+
+        self.forward_metadata = PrefillMetadata(prefill_wrappers, False, False)
+
     def forward_extend(
         self,
         q: torch.Tensor,

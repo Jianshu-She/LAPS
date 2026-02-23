@@ -1,0 +1,46 @@
+benchmark_args=Namespace(backend='sglang', base_url='http://127.0.0.1:30000', host='0.0.0.0', port=None, dataset_name='random', dataset_path='', model='/mnt/weka/home/jianshu.she/models/qwen2.5-0.5b', served_model_name=None, tokenizer=None, num_prompts=100, sharegpt_output_len=None, sharegpt_context_len=None, random_input_len=256, random_output_len=32, random_range_ratio=0.0, image_count=1, image_resolution='1080p', random_image_count=False, image_format='jpeg', image_content='random', request_rate=inf, use_trace_timestamps=False, max_concurrency=None, output_file='/mnt/weka/home/jianshu.she/graph/sglang/bench_results/baseline_medium.json', output_details=False, print_requests=False, disable_tqdm=False, disable_stream=False, return_logprob=False, return_routed_experts=False, seed=1, disable_ignore_eos=False, extra_request_body=None, apply_chat_template=False, profile=False, plot_throughput=False, profile_activities=['CPU', 'GPU'], profile_num_steps=None, profile_by_stage=False, profile_stages=None, profile_output_dir=None, profile_prefix=None, lora_name=None, lora_request_distribution='uniform', lora_zipf_alpha=1.5, prompt_suffix='', pd_separated=False, profile_prefill_url=None, profile_decode_url=None, flush_cache=False, warmup_requests=1, tokenize_prompt=False, gsp_num_groups=64, gsp_prompts_per_group=16, gsp_system_prompt_len=2048, gsp_question_len=128, gsp_output_len=256, gsp_range_ratio=1.0, gsp_fast_prepare=False, gsp_send_routing_key=False, gsp_num_turns=1, gsp_ordered=False, mooncake_slowdown_factor=1.0, mooncake_num_rounds=1, mooncake_workload='conversation', tag=None, header=None)
+Namespace(backend='sglang', base_url='http://127.0.0.1:30000', host='0.0.0.0', port=30000, dataset_name='random', dataset_path='', model='/mnt/weka/home/jianshu.she/models/qwen2.5-0.5b', served_model_name=None, tokenizer=None, num_prompts=100, sharegpt_output_len=None, sharegpt_context_len=None, random_input_len=256, random_output_len=32, random_range_ratio=0.0, image_count=1, image_resolution='1080p', random_image_count=False, image_format='jpeg', image_content='random', request_rate=inf, use_trace_timestamps=False, max_concurrency=None, output_file='/mnt/weka/home/jianshu.she/graph/sglang/bench_results/baseline_medium.json', output_details=False, print_requests=False, disable_tqdm=False, disable_stream=False, return_logprob=False, return_routed_experts=False, seed=1, disable_ignore_eos=False, extra_request_body=None, apply_chat_template=False, profile=False, plot_throughput=False, profile_activities=['CPU', 'GPU'], profile_num_steps=None, profile_by_stage=False, profile_stages=None, profile_output_dir=None, profile_prefix=None, lora_name=None, lora_request_distribution='uniform', lora_zipf_alpha=1.5, prompt_suffix='', pd_separated=False, profile_prefill_url=None, profile_decode_url=None, flush_cache=False, warmup_requests=1, tokenize_prompt=False, gsp_num_groups=64, gsp_prompts_per_group=16, gsp_system_prompt_len=2048, gsp_question_len=128, gsp_output_len=256, gsp_range_ratio=1.0, gsp_fast_prepare=False, gsp_send_routing_key=False, gsp_num_turns=1, gsp_ordered=False, mooncake_slowdown_factor=1.0, mooncake_num_rounds=1, mooncake_workload='conversation', tag=None, header=None)
+
+#Input tokens: 12929
+#Output tokens: 1500
+Starting warmup with 1 sequences...
+Warmup completed with 1 sequences. Starting main benchmark run...
+  0%|          | 0/100 [00:00<?, ?it/s]  1%|          | 1/100 [00:00<00:30,  3.21it/s]100%|██████████| 100/100 [00:00<00:00, 256.99it/s]
+
+============ Serving Benchmark Result ============
+Backend:                                 sglang    
+Traffic request rate:                    inf       
+Max request concurrency:                 not set   
+Successful requests:                     100       
+Benchmark duration (s):                  0.41      
+Total input tokens:                      12929     
+Total input text tokens:                 12929     
+Total generated tokens:                  1500      
+Total generated tokens (retokenized):    1500      
+Request throughput (req/s):              245.27    
+Input token throughput (tok/s):          31710.41  
+Output token throughput (tok/s):         3678.99   
+Peak output token throughput (tok/s):    1500.00   
+Peak concurrent requests:                100       
+Total token throughput (tok/s):          35389.40  
+Concurrency:                             83.98     
+----------------End-to-End Latency----------------
+Mean E2E Latency (ms):                   342.42    
+Median E2E Latency (ms):                 346.59    
+P90 E2E Latency (ms):                    370.39    
+P99 E2E Latency (ms):                    379.47    
+---------------Time to First Token----------------
+Mean TTFT (ms):                          308.66    
+Median TTFT (ms):                        307.02    
+P99 TTFT (ms):                           330.24    
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          2.86      
+Median TPOT (ms):                        2.44      
+P99 TPOT (ms):                           10.12     
+---------------Inter-Token Latency----------------
+Mean ITL (ms):                           2.41      
+Median ITL (ms):                         1.57      
+P95 ITL (ms):                            12.52     
+P99 ITL (ms):                            13.47     
+Max ITL (ms):                            14.10     
+==================================================

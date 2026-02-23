@@ -358,20 +358,104 @@ class SchedulerDisaggregationPrefillMixin:
 
         return batch
 
+    # ── LAPS (Length-Aware Prefill Scheduler) dual-queue methods ──
+
+    def _init_laps_state(self: Scheduler) -> None:
+        """Initialize dual-queue state for LAPS scheduler."""
+        self._laps_short_queue: List[Req] = []
+        self._laps_long_queue: List[Req] = []
+        self._laps_threshold = self.server_args.laps_length_threshold
+        logger.info(
+            f"LAPS scheduler enabled with length threshold={self._laps_threshold}"
+        )
+
+    def _laps_classify_requests(self: Scheduler, reqs: List[Req]) -> None:
+        """Route bootstrapped requests into short/long queues by token length."""
+        for req in reqs:
+            if len(req.origin_input_ids) <= self._laps_threshold:
+                self._laps_short_queue.append(req)
+            else:
+                self._laps_long_queue.append(req)
+
+    def _laps_rebuild_from_waiting_queue(self: Scheduler) -> None:
+        """After aborts may have modified waiting_queue, rebuild sub-queues."""
+        waiting_set = set(id(r) for r in self.waiting_queue)
+        self._laps_short_queue = [
+            r for r in self._laps_short_queue if id(r) in waiting_set
+        ]
+        self._laps_long_queue = [
+            r for r in self._laps_long_queue if id(r) in waiting_set
+        ]
+
+    def _laps_sync_waiting_queue(self: Scheduler) -> None:
+        """Sync self.waiting_queue = short + long for abort handlers and metrics."""
+        self.waiting_queue = self._laps_short_queue + self._laps_long_queue
+
+    def _build_batch_from_queue(
+        self: Scheduler, queue: List[Req]
+    ) -> Optional[ScheduleBatch]:
+        """Build a batch from a specific sub-queue using the existing batch builder."""
+        saved_queue = self.waiting_queue
+        self.waiting_queue = queue
+        batch = self.get_new_batch_prefill()
+        # The batch builder may have consumed requests from the queue.
+        # Since lists are mutable and get_new_batch_prefill modifies self.waiting_queue
+        # in-place (via pop), we need to capture the updated state.
+        updated_queue = self.waiting_queue
+        self.waiting_queue = saved_queue
+        # Update the source queue in-place
+        queue[:] = updated_queue
+        return batch
+
+    def _get_next_laps_batch_to_run(
+        self: Scheduler,
+    ) -> Optional[ScheduleBatch]:
+        """Decides which queue to service: short first, then long."""
+        self.running_batch.batch_is_full = False
+        self.process_prefill_chunk()
+
+        batch = None
+        # Short queue has priority
+        if len(self._laps_short_queue) > 0:
+            batch = self._build_batch_from_queue(self._laps_short_queue)
+
+        # Fall back to long queue
+        if batch is None and len(self._laps_long_queue) > 0:
+            batch = self._build_batch_from_queue(self._laps_long_queue)
+
+        batch = self.maybe_prepare_mlp_sync_batch_and_log_stats(batch)
+
+        if batch:
+            trace_event_batch("schedule", batch.reqs)
+
+        return batch
+
+    # ── Event loops ──
+
     @torch.no_grad()
     def event_loop_normal_disagg_prefill(self: Scheduler) -> None:
         """A normal scheduler loop for prefill worker in disaggregation mode."""
+
+        use_laps = self.server_args.enable_laps_scheduler
+        if use_laps:
+            self._init_laps_state()
 
         while True:
             # Receive requests
             recv_reqs = self.recv_requests()
             self.process_input_requests(recv_reqs)
-            self.waiting_queue.extend(
-                self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
-            )
+            bootstrapped = self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
 
-            # Get the next batch to run
-            batch = self.get_next_disagg_prefill_batch_to_run()
+            if use_laps:
+                self._laps_rebuild_from_waiting_queue()
+                self._laps_classify_requests(bootstrapped)
+                self._laps_sync_waiting_queue()
+                batch = self._get_next_laps_batch_to_run()
+                self._laps_sync_waiting_queue()
+            else:
+                self.waiting_queue.extend(bootstrapped)
+                batch = self.get_next_disagg_prefill_batch_to_run()
+
             self.cur_batch = batch
 
             # Launch the current batch
@@ -390,16 +474,26 @@ class SchedulerDisaggregationPrefillMixin:
     def event_loop_overlap_disagg_prefill(self: Scheduler) -> None:
         self.result_queue = deque()
 
+        use_laps = self.server_args.enable_laps_scheduler
+        if use_laps:
+            self._init_laps_state()
+
         while True:
             # Receive requests
             recv_reqs = self.recv_requests()
             self.process_input_requests(recv_reqs)
-            self.waiting_queue.extend(
-                self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
-            )
+            bootstrapped = self.disagg_prefill_bootstrap_queue.pop_bootstrapped()
 
-            # Get the next batch to run
-            batch = self.get_next_disagg_prefill_batch_to_run()
+            if use_laps:
+                self._laps_rebuild_from_waiting_queue()
+                self._laps_classify_requests(bootstrapped)
+                self._laps_sync_waiting_queue()
+                batch = self._get_next_laps_batch_to_run()
+                self._laps_sync_waiting_queue()
+            else:
+                self.waiting_queue.extend(bootstrapped)
+                batch = self.get_next_disagg_prefill_batch_to_run()
+
             self.cur_batch = batch
 
             # Launch the current batch

@@ -24,6 +24,12 @@ class RouterArgs:
     )  # List of (url, bootstrap_port)
     decode_urls: List[str] = dataclasses.field(default_factory=list)
 
+    # LAPS dynamic allocation
+    enable_laps_alloc: bool = False
+    laps_alloc_threshold: int = 256
+    laps_rebalance_interval_s: float = 5.0
+    laps_rebalance_ratio: float = 2.0
+
     # Routing policy
     policy: str = "cache_aware"
     prefill_policy: Optional[str] = None  # Specific policy for prefill nodes in PD mode
@@ -379,6 +385,30 @@ class RouterArgs:
             action="append",
             metavar=("URL",),
             help="Decode server URL. Can be specified multiple times.",
+        )
+        pd_group.add_argument(
+            f"--{prefix}enable-laps-alloc",
+            action="store_true",
+            help="Enable LAPS dynamic GPU allocation across prefill instances. "
+            "Routes short/long requests to separate prefill groups and rebalances based on queue pressure.",
+        )
+        pd_group.add_argument(
+            f"--{prefix}laps-alloc-threshold",
+            type=int,
+            default=RouterArgs.laps_alloc_threshold,
+            help="Token length threshold for LAPS allocation: <= threshold → short group, > threshold → long group (default: 256)",
+        )
+        pd_group.add_argument(
+            f"--{prefix}laps-rebalance-interval-s",
+            type=float,
+            default=RouterArgs.laps_rebalance_interval_s,
+            help="Minimum interval in seconds between LAPS rebalancing checks (default: 5.0)",
+        )
+        pd_group.add_argument(
+            f"--{prefix}laps-rebalance-ratio",
+            type=float,
+            default=RouterArgs.laps_rebalance_ratio,
+            help="Pending request ratio threshold to trigger rebalancing between groups (default: 2.0)",
         )
         pd_group.add_argument(
             f"--{prefix}worker-startup-timeout-secs",

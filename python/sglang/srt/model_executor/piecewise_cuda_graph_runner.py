@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import gc
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import torch
 import tqdm
@@ -282,6 +283,65 @@ class PiecewiseCudaGraphRunner:
                     )
 
         self.raw_num_tokens = 0
+
+        # Initialize batch prefill settings
+        self.batch_prefill_enabled = (
+            model_runner.server_args.enable_batch_prefill_cuda_graph
+        )
+        if self.batch_prefill_enabled:
+            self.batch_prefill_batch_sizes = sorted(
+                model_runner.server_args.batch_prefill_batch_sizes
+            )
+            self.batch_prefill_seq_lengths = sorted(
+                model_runner.server_args.batch_prefill_seq_lengths
+            )
+            max_bp_bs = max(self.batch_prefill_batch_sizes)
+            max_bp_seq_len = max(self.batch_prefill_seq_lengths)
+            max_bp_tokens = max_bp_bs * max_bp_seq_len
+
+            # Pre-allocate input buffers for batch prefill
+            with torch.device(self.device):
+                self.bp_input_ids = torch.zeros(
+                    max_bp_tokens, dtype=torch.int64
+                )
+                self.bp_positions = torch.zeros(
+                    max_bp_tokens, dtype=torch.int64
+                )
+                self.bp_out_cache_loc = torch.zeros(
+                    max_bp_tokens, dtype=self._cache_loc_dtype()
+                )
+                self.bp_seq_lens = torch.ones(max_bp_bs, dtype=torch.int64)
+                self.bp_req_pool_indices = torch.arange(max_bp_bs)
+                self.bp_extend_seq_lens = torch.ones(
+                    max_bp_bs, dtype=torch.int64
+                )
+
+            # Pre-allocate attention metadata buffers
+            self.model_runner.attn_backend.init_batch_prefill_cuda_graph_state(
+                max_bp_bs, max_bp_seq_len
+            )
+
+            self.batch_prefill_graphs = {}
+            self.batch_prefill_outputs = {}
+            self.batch_prefill_cuda_graph_fbs = {}  # Debug: store ForwardBatch refs
+
+            log_info_on_rank0(
+                logger,
+                f"Batch prefill CUDA graph enabled (monolithic): "
+                f"batch_sizes={self.batch_prefill_batch_sizes}, "
+                f"seq_lengths={self.batch_prefill_seq_lengths}"
+            )
+
+            # Capture monolithic batch prefill graphs
+            try:
+                self.capture_batch_prefill()
+            except RuntimeError as e:
+                log_info_on_rank0(
+                    logger,
+                    f"Batch prefill CUDA graph capture failed: {e}. "
+                    f"Disabling batch prefill CUDA graph.",
+                )
+                self.batch_prefill_enabled = False
 
     def warmup_torch_compile(self, num_tokens: int):
         """Warmup the model with a simple forward pass before CUDA graph capture."""
@@ -675,6 +735,7 @@ class PiecewiseCudaGraphRunner:
             temperature=forward_batch.temperature,
             top_p_normalized_logprobs=forward_batch.top_p_normalized_logprobs,
             top_p=forward_batch.top_p,
+            padded_static_len=forward_batch.padded_static_len,
         )
 
         return static_forward_batch
@@ -721,6 +782,291 @@ class PiecewiseCudaGraphRunner:
                     raise NotImplementedError(
                         "PPProxyTensors is not supported in PiecewiseCudaGraphRunner yet."
                     )
+
+    def can_run_batch_prefill(self, forward_batch: ForwardBatch) -> bool:
+        """Check if the forward batch can be run with batch prefill CUDA graph."""
+        if not self.batch_prefill_enabled:
+            return False
+
+        if forward_batch.forward_mode != ForwardMode.EXTEND:
+            return False
+
+        if forward_batch.return_logprob:
+            return False
+
+        if self.is_multimodal:
+            return False
+
+        if forward_batch.batch_size <= 1:
+            return False
+
+        # Get max extend length
+        max_extend_len = 0
+        for seq_len in forward_batch.extend_seq_lens_cpu:
+            val = seq_len.item() if hasattr(seq_len, "item") else int(seq_len)
+            max_extend_len = max(max_extend_len, val)
+
+        # Check if a matching captured graph exists
+        target = self._find_batch_prefill_graph(
+            forward_batch.batch_size, max_extend_len
+        )
+        return target is not None
+
+    def _find_batch_prefill_graph(
+        self, actual_bs: int, max_extend_len: int
+    ) -> Optional[Tuple[int, int]]:
+        """Find the smallest captured (bs, seq_len) graph that fits the batch.
+
+        Returns (target_bs, target_seq_len) or None if no matching graph exists.
+        """
+        # Find smallest captured bs >= actual_bs
+        target_bs = None
+        for bs in self.batch_prefill_batch_sizes:
+            if bs >= actual_bs:
+                target_bs = bs
+                break
+        if target_bs is None:
+            return None
+
+        # Find smallest captured seq_len >= max_extend_len
+        target_seq_len = None
+        for sl in self.batch_prefill_seq_lengths:
+            if sl >= max_extend_len:
+                target_seq_len = sl
+                break
+        if target_seq_len is None:
+            return None
+
+        key = (target_bs, target_seq_len)
+        if key not in self.batch_prefill_graphs:
+            return None
+
+        return key
+
+    def capture_batch_prefill(self):
+        """Capture monolithic CUDA graphs with attention inside for batch prefill."""
+        with freeze_gc(
+            self.model_runner.server_args.enable_cudagraph_gc
+        ), graph_capture() as graph_capture_context:
+            stream = graph_capture_context.stream
+            # Capture in reverse order (large first) for better memory sharing
+            for bs in reversed(self.batch_prefill_batch_sizes):
+                for seq_len in reversed(self.batch_prefill_seq_lengths):
+                    log_info_on_rank0(
+                        logger,
+                        f"Capturing batch prefill graph (bs={bs}, seq_len={seq_len})",
+                    )
+                    self.capture_one_batch_prefill(bs, seq_len, stream)
+
+    def capture_one_batch_prefill(
+        self, bs: int, seq_len: int, stream: torch.cuda.Stream
+    ):
+        """Capture a single monolithic CUDA graph for batch prefill."""
+        num_tokens = bs * seq_len
+        key = (bs, seq_len)
+
+        # Slice pre-allocated buffers
+        input_ids = self.bp_input_ids[:num_tokens]
+        positions = self.bp_positions[:num_tokens]
+        out_cache_loc = self.bp_out_cache_loc[:num_tokens]
+        req_pool_indices = self.bp_req_pool_indices[:bs]
+        seq_lens = self.bp_seq_lens[:bs]
+        extend_seq_lens = self.bp_extend_seq_lens[:bs]
+
+        # Set dummy values for capture
+        seq_lens.fill_(seq_len)  # Each sequence has seq_len total length
+        extend_seq_lens.fill_(seq_len)
+
+        with torch.device(self.device):
+            forward_batch = ForwardBatch(
+                forward_mode=ForwardMode.EXTEND,
+                batch_size=bs,
+                input_ids=input_ids,
+                input_embeds=None,
+                req_pool_indices=req_pool_indices,
+                seq_lens=seq_lens,
+                next_token_logits_buffer=None,
+                orig_seq_lens=seq_lens,
+                seq_lens_cpu=seq_lens.cpu(),
+                req_to_token_pool=self.model_runner.req_to_token_pool,
+                token_to_kv_pool=self.model_runner.token_to_kv_pool,
+                attn_backend=self.model_runner.attn_backend,
+                out_cache_loc=out_cache_loc,
+                out_cache_loc_swa=None,
+                seq_lens_sum=num_tokens,
+                mamba_track_indices=None,
+                mamba_track_mask=None,
+                mamba_track_seqlens=None,
+                encoder_lens=None,
+                return_logprob=False,
+                extend_num_tokens=num_tokens,
+                extend_seq_lens=extend_seq_lens,
+                extend_prefix_lens=torch.zeros(bs, dtype=torch.int64),
+                extend_start_loc=torch.arange(
+                    0, num_tokens, seq_len, dtype=torch.int64
+                ),
+                extend_prefix_lens_cpu=torch.zeros(bs, dtype=torch.int64),
+                extend_seq_lens_cpu=torch.full(
+                    (bs,), seq_len, dtype=torch.int64
+                ),
+                extend_logprob_start_lens_cpu=torch.full(
+                    (bs,), seq_len, dtype=torch.int64
+                ),
+                positions=positions,
+                global_num_tokens_gpu=None,
+                global_num_tokens_for_logprob_gpu=None,
+                dp_padding_mode=DpPaddingMode.get_default_mode_in_cuda_graph(),
+                global_dp_buffer_len=None,
+                mrope_positions=None,
+                spec_algorithm=None,
+                spec_info=None,
+                capture_hidden_mode=CaptureHiddenMode.NULL,
+                num_token_non_padded=None,
+                global_forward_mode=ForwardMode.EXTEND,
+                lora_ids=None,
+                padded_static_len=seq_len,
+            )
+
+        # Initialize attention metadata using pre-allocated buffers
+        self.model_runner.attn_backend.init_forward_metadata_capture_batch_prefill_cuda_graph(
+            bs=bs,
+            seq_len=seq_len,
+            req_pool_indices=req_pool_indices,
+            seq_lens=seq_lens,
+        )
+
+        # Define forward function — NO piecewise context, so attention runs
+        # normally and gets captured inside the graph
+        def run_once():
+            forward_batch.dp_local_start_pos = (
+                forward_batch.dp_local_num_tokens
+            ) = None
+            set_dp_buffer_len(
+                None, num_tokens, forward_batch.dp_padding_mode.is_max_len()
+            )
+            set_is_extend_in_batch(False)
+
+            with set_forward_context(
+                forward_batch,
+                self.attention_layers,
+                self.quant_config,
+                self.moe_layers,
+                self.moe_fusions,
+            ):
+                return self.model_runner.model.forward(
+                    forward_batch.input_ids,
+                    forward_batch.positions,
+                    forward_batch,
+                )
+
+        # Warmup runs
+        for _ in range(2):
+            self.device_module.synchronize()
+            self.model_runner.tp_group.barrier()
+            run_once()
+
+        # Capture the graph
+        if get_global_graph_memory_pool() is None:
+            set_global_graph_memory_pool(self.device_module.graph_pool_handle())
+
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(
+            cuda_graph=graph,
+            pool=get_global_graph_memory_pool(),
+            stream=stream,
+        ):
+            output = run_once()
+
+        self.batch_prefill_graphs[key] = graph
+        self.batch_prefill_outputs[key] = output
+        self.batch_prefill_cuda_graph_fbs[key] = forward_batch
+
+    def replay_batch_prefill(
+        self,
+        forward_batch: ForwardBatch,
+        **kwargs,
+    ) -> Union[LogitsProcessorOutput, PPProxyTensors, EmbeddingPoolerOutput]:
+        """Replay a monolithic batch prefill CUDA graph with attention inside."""
+        actual_bs = forward_batch.batch_size
+        extend_lens_cpu = [
+            (v.item() if hasattr(v, "item") else int(v))
+            for v in forward_batch.extend_seq_lens_cpu
+        ]
+        max_extend_len = max(extend_lens_cpu)
+
+        # Find matching captured graph
+        target_bs, target_seq_len = self._find_batch_prefill_graph(
+            actual_bs, max_extend_len
+        )
+        total_tokens = target_bs * target_seq_len
+
+        # 1. Zero padded buffers, then RIGHT-ALIGN real data in each slot.
+        #
+        # Flash attention uses a bottom-right aligned causal mask:
+        #   query pos p sees KV pos j where j <= p + cache_seqlens - seqlen_q
+        # With left-alignment, real tokens at positions 0..(extend_len-1) can't
+        # see enough KV entries (masked out). Right-alignment places them at
+        # positions (seq_len-extend_len)..(seq_len-1), fixing the mask.
+        self.bp_input_ids[:total_tokens].zero_()
+        self.bp_out_cache_loc[:total_tokens].zero_()
+        self.bp_positions[:total_tokens].zero_()
+
+        src_offset = 0
+        for i in range(actual_bs):
+            actual_len = extend_lens_cpu[i]
+            # Right-align: place real tokens at end of slot
+            dst_offset = i * target_seq_len + (target_seq_len - actual_len)
+            self.bp_input_ids[dst_offset : dst_offset + actual_len].copy_(
+                forward_batch.input_ids[src_offset : src_offset + actual_len]
+            )
+            self.bp_positions[dst_offset : dst_offset + actual_len].copy_(
+                forward_batch.positions[src_offset : src_offset + actual_len]
+            )
+            self.bp_out_cache_loc[dst_offset : dst_offset + actual_len].copy_(
+                forward_batch.out_cache_loc[src_offset : src_offset + actual_len]
+            )
+            src_offset += actual_len
+
+        # 2. Update batch-level buffers.
+        # Set extend_seq_lens = target_seq_len for ALL sequences so LogitsProcessor
+        # picks the last position of each slot (= last real token with right-alignment).
+        self.bp_extend_seq_lens[:target_bs].fill_(target_seq_len)
+
+        self.bp_seq_lens[:actual_bs].copy_(
+            forward_batch.seq_lens[:actual_bs]
+        )
+        self.bp_seq_lens[actual_bs:target_bs].fill_(1)
+
+        self.bp_req_pool_indices[:actual_bs].copy_(
+            forward_batch.req_pool_indices[:actual_bs]
+        )
+        # Use first real sequence's pool index for dummy sequences (valid page table)
+        self.bp_req_pool_indices[actual_bs:target_bs].fill_(
+            forward_batch.req_pool_indices[0].item()
+        )
+
+        # 3. Update attention metadata in-place
+        self.model_runner.attn_backend.init_forward_metadata_replay_batch_prefill_cuda_graph(
+            bs=target_bs,
+            seq_len=target_seq_len,
+            req_pool_indices=self.bp_req_pool_indices[:target_bs],
+            seq_lens=self.bp_seq_lens[:target_bs],
+            seq_lens_cpu=self.bp_seq_lens[:target_bs].cpu(),
+        )
+
+        # 4. Replay the monolithic graph
+        self.batch_prefill_graphs[(target_bs, target_seq_len)].replay()
+        output = self.batch_prefill_outputs[(target_bs, target_seq_len)]
+
+        # 5. Extract valid output (only actual_bs sequences)
+        return LogitsProcessorOutput(
+            next_token_logits=output.next_token_logits[:actual_bs],
+            hidden_states=(
+                output.hidden_states[:actual_bs]
+                if output.hidden_states is not None
+                else None
+            ),
+        )
 
     def get_spec_info(self, num_tokens: int):
         spec_info = None

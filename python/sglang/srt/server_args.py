@@ -604,6 +604,14 @@ class ServerArgs:
     piecewise_cuda_graph_max_tokens: Optional[int] = None
     piecewise_cuda_graph_tokens: Optional[List[int]] = None
     piecewise_cuda_graph_compiler: str = "eager"
+    # Batch prefill CUDA graph settings
+    enable_batch_prefill_cuda_graph: bool = False
+    batch_prefill_max_seq_len: int = 256
+    batch_prefill_batch_sizes: Optional[List[int]] = None
+    batch_prefill_seq_lengths: Optional[List[int]] = None
+    # LAPS (Length-Aware Prefill Scheduler) settings
+    enable_laps_scheduler: bool = False
+    laps_length_threshold: int = 256
     torchao_config: str = ""
     enable_nan_detection: bool = False
     enable_p2p_check: bool = False
@@ -1014,6 +1022,16 @@ class ServerArgs:
             self.piecewise_cuda_graph_tokens = (
                 self._generate_piecewise_cuda_graph_tokens()
             )
+
+        # Initialize batch prefill CUDA graph settings
+        if self.batch_prefill_batch_sizes is None:
+            self.batch_prefill_batch_sizes = [1, 2, 4, 8]
+        if self.batch_prefill_seq_lengths is None:
+            self.batch_prefill_seq_lengths = [16, 32, 64, 128, 256]
+        # Filter out seq lengths that exceed the max
+        self.batch_prefill_seq_lengths = [
+            s for s in self.batch_prefill_seq_lengths if s <= self.batch_prefill_max_seq_len
+        ]
 
         if self.mem_fraction_static is None:
             # Constant meta data (e.g., from attention backend)
@@ -2550,6 +2568,12 @@ class ServerArgs:
                 logger.warning(
                     "Cuda graph is disabled for prefill server when piecewise cuda graph is not enabled."
                 )
+
+        if self.enable_laps_scheduler and self.disaggregation_mode != "prefill":
+            logger.warning(
+                "LAPS scheduler is only supported in disaggregation prefill mode. Disabling."
+            )
+            self.enable_laps_scheduler = False
 
     def _handle_encoder_disaggregation(self):
         if self.enable_prefix_mm_cache and not self.encoder_only:
@@ -4604,6 +4628,42 @@ class ServerArgs:
             type=int,
             default=ServerArgs.piecewise_cuda_graph_max_tokens,
             help="Set the maximum tokens when using piecewise cuda graph.",
+        )
+        parser.add_argument(
+            "--enable-batch-prefill-cuda-graph",
+            action="store_true",
+            help="Enable batch prefill CUDA graph capture for multiple short prefill requests.",
+        )
+        parser.add_argument(
+            "--batch-prefill-max-seq-len",
+            type=int,
+            default=ServerArgs.batch_prefill_max_seq_len,
+            help="Maximum sequence length for batch prefill CUDA graph (default: 256).",
+        )
+        parser.add_argument(
+            "--batch-prefill-batch-sizes",
+            type=int,
+            nargs="+",
+            default=None,
+            help="List of batch sizes to capture for batch prefill CUDA graph (default: [1, 2, 4, 8]).",
+        )
+        parser.add_argument(
+            "--batch-prefill-seq-lengths",
+            type=int,
+            nargs="+",
+            default=None,
+            help="List of sequence lengths to capture for batch prefill CUDA graph (default: [16, 32, 64, 128, 256]).",
+        )
+        parser.add_argument(
+            "--enable-laps-scheduler",
+            action="store_true",
+            help="Enable LAPS (Length-Aware Prefill Scheduler) dual-queue scheduling for PD disaggregation prefill.",
+        )
+        parser.add_argument(
+            "--laps-length-threshold",
+            type=int,
+            default=ServerArgs.laps_length_threshold,
+            help="Token length threshold for LAPS scheduler to separate short/long requests (default: 256).",
         )
         parser.add_argument(
             "--torchao-config",

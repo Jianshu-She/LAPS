@@ -2191,6 +2191,136 @@ class FlashAttentionBackend(AttentionBackend):
         """Get the fill value for sequence length in CUDA graph."""
         return 1
 
+    def supports_batch_prefill_cuda_graph(self) -> bool:
+        return True
+
+    def init_batch_prefill_cuda_graph_state(self, max_bs: int, max_seq_len: int):
+        """Pre-allocate fixed-size buffers for batch prefill CUDA graph.
+
+        These buffers have stable memory addresses and are updated in-place
+        before each graph replay, allowing attention to be captured inside
+        the monolithic CUDA graph.
+        """
+        max_num_pages = (self.max_context_len + self.page_size - 1) // self.page_size
+        self.batch_prefill_cuda_graph_buffers = {
+            "cache_seqlens": torch.zeros(
+                max_bs, dtype=torch.int32, device=self.device
+            ),
+            "cu_seqlens_k": torch.zeros(
+                max_bs + 1, dtype=torch.int32, device=self.device
+            ),
+            "page_table": torch.zeros(
+                max_bs, max_num_pages, dtype=torch.int32, device=self.device
+            ),
+            "strided_indices": torch.arange(
+                0, self.max_context_len, self.page_size, device=self.device
+            ),
+        }
+        # cu_seqlens_q is stored per (bs, seq_len) key since it's fixed at capture
+        self.batch_prefill_cu_seqlens_q = {}
+        # Store metadata objects per (bs, seq_len) key
+        self.batch_prefill_cuda_graph_metadata = {}
+
+    def init_forward_metadata_capture_batch_prefill_cuda_graph(
+        self,
+        bs: int,
+        seq_len: int,
+        req_pool_indices: torch.Tensor,
+        seq_lens: torch.Tensor,
+    ):
+        """Initialize forward metadata for batch prefill CUDA graph capture.
+
+        Uses pre-allocated buffers with stable pointers. cu_seqlens_q is fixed
+        for each (bs, seq_len) combination and never changes after capture.
+        """
+        metadata = FlashAttentionMetadata()
+        buffers = self.batch_prefill_cuda_graph_buffers
+
+        # Use pre-allocated buffers (stable pointers for CUDA graph)
+        metadata.cache_seqlens_int32 = buffers["cache_seqlens"][:bs]
+        metadata.cache_seqlens_int32.copy_(seq_lens[:bs].to(torch.int32))
+
+        metadata.max_seq_len_q = seq_len
+        metadata.max_seq_len_k = seq_lens[:bs].max().item()
+
+        metadata.cu_seqlens_k = buffers["cu_seqlens_k"][:bs + 1]
+        metadata.cu_seqlens_k[0] = 0
+        metadata.cu_seqlens_k[1:].copy_(
+            torch.cumsum(metadata.cache_seqlens_int32, dim=0, dtype=torch.int32)
+        )
+
+        # cu_seqlens_q is fixed per (bs, seq_len) — create once and reuse
+        key = (bs, seq_len)
+        if key not in self.batch_prefill_cu_seqlens_q:
+            self.batch_prefill_cu_seqlens_q[key] = torch.arange(
+                0, bs * seq_len + 1, seq_len,
+                dtype=torch.int32, device=self.device,
+            )
+        metadata.cu_seqlens_q = self.batch_prefill_cu_seqlens_q[key]
+
+        # Page table from pre-allocated buffer
+        metadata.page_table = buffers["page_table"][:bs, :]
+        max_seq_pages = (
+            metadata.max_seq_len_k + self.page_size - 1
+        ) // self.page_size
+        strided_indices = buffers["strided_indices"][:max_seq_pages]
+        page_indices = self.req_to_token[
+            req_pool_indices[:bs, None],
+            strided_indices[None, :],
+        ]
+        if self.page_size > 1:
+            page_indices = page_indices // self.page_size
+        metadata.page_table[:, :max_seq_pages].copy_(page_indices)
+
+        self.batch_prefill_cuda_graph_metadata[key] = metadata
+        self.forward_metadata = metadata
+
+    def init_forward_metadata_replay_batch_prefill_cuda_graph(
+        self,
+        bs: int,
+        seq_len: int,
+        req_pool_indices: torch.Tensor,
+        seq_lens: torch.Tensor,
+        seq_lens_cpu: Optional[torch.Tensor] = None,
+    ):
+        """Initialize forward metadata for batch prefill CUDA graph replay.
+
+        Updates pre-allocated buffers IN-PLACE so that tensor pointers
+        captured in the CUDA graph remain valid.
+        """
+        key = (bs, seq_len)
+        metadata = self.batch_prefill_cuda_graph_metadata[key]
+        buffers = self.batch_prefill_cuda_graph_buffers
+
+        # Update cache_seqlens in-place
+        metadata.cache_seqlens_int32.copy_(seq_lens[:bs].to(torch.int32))
+
+        # Update max_seq_len_k
+        if seq_lens_cpu is not None:
+            metadata.max_seq_len_k = seq_lens_cpu[:bs].max().item()
+        else:
+            metadata.max_seq_len_k = seq_lens[:bs].max().item()
+
+        # Update cu_seqlens_k in-place (cu_seqlens_q stays fixed)
+        metadata.cu_seqlens_k[1:].copy_(
+            torch.cumsum(metadata.cache_seqlens_int32, dim=0, dtype=torch.int32)
+        )
+
+        # Update page_table in-place
+        max_seq_pages = (
+            metadata.max_seq_len_k + self.page_size - 1
+        ) // self.page_size
+        strided_indices = buffers["strided_indices"][:max_seq_pages]
+        page_indices = self.req_to_token[
+            req_pool_indices[:bs, None],
+            strided_indices[None, :],
+        ]
+        if self.page_size > 1:
+            page_indices = page_indices // self.page_size
+        metadata.page_table[:, :max_seq_pages].copy_(page_indices)
+
+        self.forward_metadata = metadata
+
     def _maybe_init_local_attn_metadata(
         self, forwardbatch: ForwardBatch, metadata: FlashAttentionMetadata, device
     ):
