@@ -1,8 +1,8 @@
 # LAPS: Length-Aware Prefill Scheduling for LLM Serving
 
-**Accepted to MLSys 2026** | [arXiv](https://arxiv.org/abs/2502.12345)
+**Accepted to MLSys 2026** | [arXiv](https://arxiv.org/abs/2601.11589)
 
-**Author:** Jianshu She
+**Authors:** Jianshu She, Zonghang Li, Hongchao Du, Shangyu Wu, Wenhao Zheng, Eric Xing, Zhengzhong Liu, Huaxiu Yao, Jason Xue, Qirong Ho
 
 ## Overview
 
@@ -55,7 +55,8 @@ python -m sglang.launch_server --model <model> --enable-dual-queue --waiting-win
 
 ## Documentation
 
-See [docs/laps_scheduler.md](docs/laps_scheduler.md) for detailed design and configuration options.
+- [docs/laps_scheduler.md](docs/laps_scheduler.md) — Detailed design and configuration options
+- [scripts/README.md](scripts/README.md) — Test and benchmark scripts
 
 ## Acknowledgements
 
