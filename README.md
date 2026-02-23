@@ -56,6 +56,7 @@ python -m sglang.launch_server --model <model> --enable-dual-queue --waiting-win
 ## Documentation
 
 - [docs/laps_scheduler.md](docs/laps_scheduler.md) — Detailed design and configuration options
+- [docs/code_changes.md](docs/code_changes.md) — Code changes vs vanilla SGLang (with attention-in-graph deep dive)
 - [scripts/README.md](scripts/README.md) — Test and benchmark scripts
 
 ## Acknowledgements
