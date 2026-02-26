@@ -35,9 +35,19 @@ Test and benchmark scripts for LAPS and batch prefill CUDA graph features.
 | `benchmark_batch_prefill.py` | Comprehensive server-based benchmark: launches baseline and batch-prefill servers on separate GPUs, runs correctness checks, then measures concurrent request latency at bs=1/4/8. | 2 GPUs |
 | `bench_pd_cuda_graph.sh` | PD disaggregation serving benchmark: launches prefill + decode + router via mooncake, runs `sglang.bench_serving` at multiple prompt lengths and request rates. Outputs throughput/TTFT/ITL summary. | 2 GPUs, mooncake backend |
 
+### Prefill Throughput Benchmarks (Paper Results)
+
+These are the benchmarks used to produce the results in the LAPS paper. Results are in `results/qwen2.5-32b-h200/`.
+
+| Script | Description | Requirements |
+|---|---|---|
+| `bench_prefill_only.py` | Async prefill throughput client. Sends JSONL prompts to a router with `max_new_tokens=1`, measures TTFT and prefill throughput. Supports `--concurrency` (semaphore) and `--request-rate` (Poisson) modes. | Running PD disagg cluster |
+| `bench_prefill_throughput.sh` | Runs `bench_prefill_only.py` under 3 CUDA graph settings (none / piecewise / batch-prefill) at fixed request rate + infinite rate. Uses Qwen2.5-0.5B. | 2 GPUs, mooncake backend |
+| `bench_32b_concurrency.sh` | **Main paper benchmark.** Sweeps concurrency levels (1, 2, 4, 8, 16, 32, 64, 128) across 3 CUDA graph settings on **Qwen2.5-32B / H200**. Generates the throughput and TTFT tables in the README. | 2 GPUs (H200), mooncake backend |
+
 ## Usage
 
-All scripts assume the model path is hardcoded (default: `qwen2.5-0.5b`). Edit the `MODEL_PATH` / `model_path` variable at the top of each script before running.
+All scripts assume the model path is hardcoded. Edit the `MODEL_PATH` / `model_path` / `MODEL` variable at the top of each script before running.
 
 ```bash
 # Quick correctness check
@@ -57,4 +67,7 @@ python scripts/benchmark_batch_prefill.py --model-path /path/to/model
 
 # LAPS dynamic allocation test (needs 3 GPUs)
 python scripts/test_laps_dynamic_alloc.py
+
+# Paper benchmark: Qwen2.5-32B concurrency sweep (needs 2x H200)
+bash scripts/bench_32b_concurrency.sh
 ```
