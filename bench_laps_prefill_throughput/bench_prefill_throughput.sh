@@ -12,7 +12,7 @@
 set -euo pipefail
 
 MODEL="/mnt/weka/home/jianshu.she/models/qwen2.5-0.5b"
-DATASET="/mnt/weka/home/jianshu.she/routing_system/sglang/prefill_interfere/scheduling/lmsys-chat/dataset/human_prompts_stream_10000.jsonl"
+DATASET="$(cd "$(dirname "$0")/.." && pwd)/data/lmsys_chat_10k.jsonl"
 PREFILL_PORT=30300
 DECODE_PORT=30301
 ROUTER_PORT=30302
