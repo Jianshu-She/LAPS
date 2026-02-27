@@ -137,16 +137,13 @@ run_concurrency_sweep() {
 
 trap cleanup EXIT
 
-# ───────────────────────── run 3 dual-queue settings ─────────────────────────
+# ───────────────────────── run 2 dual-queue settings ─────────────────────────
 
-launch_servers "dualqueue" "$LAPS_ARGS"
-run_concurrency_sweep "dualqueue"
+launch_servers "prefill_disagg" "$LAPS_ARGS"
+run_concurrency_sweep "prefill_disagg"
 
-launch_servers "dualqueue_piecewise" "--enable-piecewise-cuda-graph $LAPS_ARGS"
-run_concurrency_sweep "dualqueue_piecewise"
-
-launch_servers "dualqueue_batch_prefill" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
-run_concurrency_sweep "dualqueue_batch_prefill"
+launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
+run_concurrency_sweep "laps"
 
 # ───────────────────────── summary table ─────────────────────────
 
@@ -159,11 +156,10 @@ $PYTHON -c "
 import json, os, sys
 
 results_dir = '${RESULTS_DIR}'
-settings = ['dualqueue', 'dualqueue_piecewise', 'dualqueue_batch_prefill']
+settings = ['prefill_disagg', 'laps']
 labels = {
-    'dualqueue': 'DualQueue',
-    'dualqueue_piecewise': 'DualQueue+Piecewise',
-    'dualqueue_batch_prefill': 'DualQueue+BatchPF',
+    'prefill_disagg': 'Prefill Disaggregation',
+    'laps': 'LAPS',
 }
 ccs = [1, 2, 4, 8, 16, 32, 64, 128]
 

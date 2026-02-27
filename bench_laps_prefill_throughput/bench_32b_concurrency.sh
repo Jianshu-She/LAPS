@@ -1,7 +1,7 @@
 #!/bin/bash
 # Benchmark prefill throughput on Qwen2.5-32B with concurrency sweep.
 #
-# 6 settings (3 baseline + 3 dual-queue) x 8 concurrency levels = 48 data points.
+# 5 settings x 8 concurrency levels = 40 data points.
 #
 # Usage: bash bench_32b_concurrency.sh
 set -euo pipefail
@@ -135,27 +135,24 @@ run_concurrency_sweep() {
 
 trap cleanup EXIT
 
-# ───────────────────────── run 6 settings ─────────────────────────
+# ───────────────────────── run 5 settings ─────────────────────────
 
 LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
 
-launch_servers "no_cuda_graph" ""
-run_concurrency_sweep "no_cuda_graph"
+launch_servers "vanilla_sglang" ""
+run_concurrency_sweep "vanilla_sglang"
 
-launch_servers "piecewise" "--enable-piecewise-cuda-graph"
-run_concurrency_sweep "piecewise"
+launch_servers "prefill_cuda_graph" "--enable-piecewise-cuda-graph"
+run_concurrency_sweep "prefill_cuda_graph"
 
-launch_servers "batch_prefill" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph"
-run_concurrency_sweep "batch_prefill"
+launch_servers "batch_prefill_cuda_graph" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph"
+run_concurrency_sweep "batch_prefill_cuda_graph"
 
-launch_servers "dualqueue" "$LAPS_ARGS"
-run_concurrency_sweep "dualqueue"
+launch_servers "prefill_disagg" "$LAPS_ARGS"
+run_concurrency_sweep "prefill_disagg"
 
-launch_servers "dualqueue_piecewise" "--enable-piecewise-cuda-graph $LAPS_ARGS"
-run_concurrency_sweep "dualqueue_piecewise"
-
-launch_servers "dualqueue_batch_prefill" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
-run_concurrency_sweep "dualqueue_batch_prefill"
+launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
+run_concurrency_sweep "laps"
 
 # ───────────────────────── summary table ─────────────────────────
 
@@ -168,15 +165,14 @@ $PYTHON -c "
 import json, os, sys
 
 results_dir = '${RESULTS_DIR}'
-settings = ['no_cuda_graph', 'piecewise', 'batch_prefill',
-            'dualqueue', 'dualqueue_piecewise', 'dualqueue_batch_prefill']
+settings = ['vanilla_sglang', 'prefill_cuda_graph', 'batch_prefill_cuda_graph',
+            'prefill_disagg', 'laps']
 labels = {
-    'no_cuda_graph': 'No CUDA Graph',
-    'piecewise': 'Piecewise',
-    'batch_prefill': 'Piecewise+BatchPF',
-    'dualqueue': 'DualQueue',
-    'dualqueue_piecewise': 'DualQueue+Piecewise',
-    'dualqueue_batch_prefill': 'DualQueue+BatchPF',
+    'vanilla_sglang': 'Vanilla SGLang',
+    'prefill_cuda_graph': 'Prefill CUDA Graph',
+    'batch_prefill_cuda_graph': 'Batch Prefill CUDA Graph',
+    'prefill_disagg': 'Prefill Disaggregation',
+    'laps': 'LAPS',
 }
 ccs = [1, 2, 4, 8, 16, 32, 64, 128]
 
