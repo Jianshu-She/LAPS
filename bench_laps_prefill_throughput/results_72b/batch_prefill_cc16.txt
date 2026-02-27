@@ -1,0 +1,19 @@
+Benchmark: 500 prompts, max_new_tokens=1, concurrency=16
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            500 / 500
+  failed:               0
+  total_duration:       3.15 s
+  total_input_tokens:   51162
+  prefill_throughput:   16226.8 tokens/s
+  request_throughput:   158.6 req/s
+  median_ttft:          97.61 ms
+  mean_ttft:            99.53 ms
+  p50_ttft:             97.61 ms
+  p90_ttft:             120.94 ms
+  p99_ttft:             146.37 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_72b/batch_prefill_cc16.json

@@ -1,9 +1,10 @@
 #!/bin/bash
-# Benchmark prefill throughput on Qwen2.5-32B with concurrency sweep.
+# Benchmark dual-queue (LAPS) prefill throughput on Qwen2.5-32B.
 #
-# 6 settings (3 baseline + 3 dual-queue) x 8 concurrency levels = 48 data points.
+# 3 dual-queue settings x 8 concurrency levels = 24 data points.
+# Results saved to results_32b_dualqueue/ (separate from baseline results).
 #
-# Usage: bash bench_32b_concurrency.sh
+# Usage: bash bench_32b_dualqueue.sh
 set -euo pipefail
 
 MODEL="Qwen/Qwen2.5-32B"
@@ -15,7 +16,7 @@ HOST="127.0.0.1"
 IB_DEVICE="mlx5_0"
 BACKEND="mooncake"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/results_32b"
+RESULTS_DIR="${SCRIPT_DIR}/results_32b_dualqueue"
 PYTHON="/mnt/weka/home/jianshu.she/miniconda3/envs/graph/bin/python"
 
 NUM_PROMPTS=500
@@ -24,6 +25,7 @@ PREFILL_GPU=0
 DECODE_GPU=1
 
 CONCURRENCY_LEVELS="1 2 4 8 16 32 64 128"
+LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -135,18 +137,7 @@ run_concurrency_sweep() {
 
 trap cleanup EXIT
 
-# ───────────────────────── run 6 settings ─────────────────────────
-
-LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
-
-launch_servers "no_cuda_graph" ""
-run_concurrency_sweep "no_cuda_graph"
-
-launch_servers "piecewise" "--enable-piecewise-cuda-graph"
-run_concurrency_sweep "piecewise"
-
-launch_servers "batch_prefill" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph"
-run_concurrency_sweep "batch_prefill"
+# ───────────────────────── run 3 dual-queue settings ─────────────────────────
 
 launch_servers "dualqueue" "$LAPS_ARGS"
 run_concurrency_sweep "dualqueue"
@@ -168,12 +159,8 @@ $PYTHON -c "
 import json, os, sys
 
 results_dir = '${RESULTS_DIR}'
-settings = ['no_cuda_graph', 'piecewise', 'batch_prefill',
-            'dualqueue', 'dualqueue_piecewise', 'dualqueue_batch_prefill']
+settings = ['dualqueue', 'dualqueue_piecewise', 'dualqueue_batch_prefill']
 labels = {
-    'no_cuda_graph': 'No CUDA Graph',
-    'piecewise': 'Piecewise',
-    'batch_prefill': 'Piecewise+BatchPF',
     'dualqueue': 'DualQueue',
     'dualqueue_piecewise': 'DualQueue+Piecewise',
     'dualqueue_batch_prefill': 'DualQueue+BatchPF',
@@ -194,7 +181,6 @@ metrics = [
     ('total_duration_s',        'TOTAL DURATION (s)',               '{:>8.1f}'),
 ]
 
-# Cache all results
 cache = {}
 for s in settings:
     for cc in ccs:
@@ -203,7 +189,7 @@ for s in settings:
             with open(f) as fh:
                 cache[(s, cc)] = json.load(fh)
 
-title = 'Qwen2.5-32B, 1 prefill GPU (H200)'
+title = 'Qwen2.5-32B, 1 prefill GPU (H200) — Dual-Queue (LAPS)'
 print()
 print('=' * 110)
 print(f'  BENCHMARK SUMMARY — {title}')

@@ -1,12 +1,13 @@
 #!/bin/bash
-# Benchmark prefill throughput on Qwen2.5-32B with concurrency sweep.
+# Benchmark prefill throughput on Qwen2.5-72B-Instruct with TP=2 and concurrency sweep.
 #
 # 6 settings (3 baseline + 3 dual-queue) x 8 concurrency levels = 48 data points.
+# Prefill server: GPU 0,1 (TP=2); Decode server: GPU 2,3 (TP=2).
 #
-# Usage: bash bench_32b_concurrency.sh
+# Usage: bash bench_72b_concurrency.sh
 set -euo pipefail
 
-MODEL="Qwen/Qwen2.5-32B"
+MODEL="Qwen/Qwen2.5-72B-Instruct"
 DATASET="/mnt/weka/home/jianshu.she/routing_system/sglang/prefill_interfere/scheduling/lmsys-chat/dataset/human_prompts_stream_10000.jsonl"
 PREFILL_PORT=30300
 DECODE_PORT=30301
@@ -14,16 +15,18 @@ ROUTER_PORT=30302
 HOST="127.0.0.1"
 IB_DEVICE="mlx5_0"
 BACKEND="mooncake"
+TP_SIZE=2
+PREFILL_GPUS="0,1"
+DECODE_GPUS="2,3"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/results_32b"
+RESULTS_DIR="${SCRIPT_DIR}/results_72b"
 PYTHON="/mnt/weka/home/jianshu.she/miniconda3/envs/graph/bin/python"
 
 NUM_PROMPTS=500
 MAX_NEW_TOKENS=1
-PREFILL_GPU=0
-DECODE_GPU=1
 
 CONCURRENCY_LEVELS="1 2 4 8 16 32 64 128"
+LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -59,15 +62,18 @@ launch_servers() {
     echo ""
     echo "============================================================"
     echo "  Launching servers for: ${label}"
+    echo "  Model: ${MODEL}, TP=${TP_SIZE}"
+    echo "  Prefill GPUs: ${PREFILL_GPUS}, Decode GPUs: ${DECODE_GPUS}"
     echo "  Prefill args: ${prefill_extra_args:-<none>}"
     echo "============================================================"
 
     cleanup
 
-    # ── launch decode (GPU $DECODE_GPU) ──
-    echo "[launch] Decode server on GPU ${DECODE_GPU}..."
-    CUDA_VISIBLE_DEVICES=$DECODE_GPU $PYTHON -m sglang.launch_server \
+    # ── launch decode (TP=2) ──
+    echo "[launch] Decode server on GPUs ${DECODE_GPUS}..."
+    CUDA_VISIBLE_DEVICES=$DECODE_GPUS $PYTHON -m sglang.launch_server \
         --model-path "$MODEL" \
+        --tp-size $TP_SIZE \
         --disaggregation-mode decode \
         --disaggregation-transfer-backend $BACKEND \
         --disaggregation-ib-device $IB_DEVICE \
@@ -76,10 +82,11 @@ launch_servers() {
         --mem-fraction-static 0.85 \
         > "${RESULTS_DIR}/${label}_decode.log" 2>&1 &
 
-    # ── launch prefill (GPU $PREFILL_GPU) ──
-    echo "[launch] Prefill server on GPU ${PREFILL_GPU} with: ${prefill_extra_args:-<none>}..."
-    CUDA_VISIBLE_DEVICES=$PREFILL_GPU $PYTHON -m sglang.launch_server \
+    # ── launch prefill (TP=2) ──
+    echo "[launch] Prefill server on GPUs ${PREFILL_GPUS} with: ${prefill_extra_args:-<none>}..."
+    CUDA_VISIBLE_DEVICES=$PREFILL_GPUS $PYTHON -m sglang.launch_server \
         --model-path "$MODEL" \
+        --tp-size $TP_SIZE \
         --disaggregation-mode prefill \
         --disaggregation-transfer-backend $BACKEND \
         --disaggregation-ib-device $IB_DEVICE \
@@ -89,8 +96,8 @@ launch_servers() {
         $prefill_extra_args \
         > "${RESULTS_DIR}/${label}_prefill.log" 2>&1 &
 
-    wait_ready "http://${HOST}:${PREFILL_PORT}/health" 600
-    wait_ready "http://${HOST}:${DECODE_PORT}/health"  600
+    wait_ready "http://${HOST}:${PREFILL_PORT}/health" 900
+    wait_ready "http://${HOST}:${DECODE_PORT}/health"  900
 
     # ── launch router ──
     echo "[launch] Router..."
@@ -136,8 +143,6 @@ run_concurrency_sweep() {
 trap cleanup EXIT
 
 # ───────────────────────── run 6 settings ─────────────────────────
-
-LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
 
 launch_servers "no_cuda_graph" ""
 run_concurrency_sweep "no_cuda_graph"
@@ -194,7 +199,6 @@ metrics = [
     ('total_duration_s',        'TOTAL DURATION (s)',               '{:>8.1f}'),
 ]
 
-# Cache all results
 cache = {}
 for s in settings:
     for cc in ccs:
@@ -203,7 +207,7 @@ for s in settings:
             with open(f) as fh:
                 cache[(s, cc)] = json.load(fh)
 
-title = 'Qwen2.5-32B, 1 prefill GPU (H200)'
+title = 'Qwen2.5-72B-Instruct, TP=2, 1 prefill instance (2x H200)'
 print()
 print('=' * 110)
 print(f'  BENCHMARK SUMMARY — {title}')

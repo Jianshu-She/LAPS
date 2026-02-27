@@ -1,0 +1,19 @@
+Benchmark: 500 prompts, max_new_tokens=1, concurrency=8
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            500 / 500
+  failed:               0
+  total_duration:       11.31 s
+  total_input_tokens:   51162
+  prefill_throughput:   4522.0 tokens/s
+  request_throughput:   44.2 req/s
+  median_ttft:          148.88 ms
+  mean_ttft:            179.85 ms
+  p50_ttft:             148.88 ms
+  p90_ttft:             171.34 ms
+  p99_ttft:             1286.26 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_72b/dualqueue_cc8.json
