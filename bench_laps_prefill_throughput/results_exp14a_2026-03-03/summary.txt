@@ -1,0 +1,2 @@
+vanilla               RPS=272.1  avg_latency=116.0ms  fail=0
+batch_cg_v2           RPS=272.0  avg_latency=116.1ms  fail=0

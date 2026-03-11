@@ -1,0 +1,86 @@
+================================================================================
+  1) BP-CG-REPLAY Padding Analysis (batch_cg)
+================================================================================
+  [7b] Total BP-CG-REPLAY entries: 7768
+  [7b] Overall: real=1,448,099 padded=8,631,200 avg_ratio=5.96x waste=83.2%
+  [7b] By target_bs:
+      bs   count        real      padded   ratio   waste
+       2    3939     343,682     758,432    2.21  54.7%
+       4    1788     239,276     866,048    3.62  72.4%
+       8    1155     327,363   1,781,248    5.44  81.6%
+      16     636     325,622   2,600,960    7.99  87.5%
+      32     250     212,156   2,624,512   12.37  91.9%
+  [7b] By target_seq_len:
+       seq   count        real      padded   ratio   waste
+         8      20         295         320    1.08   7.8%
+        16     725      18,499      27,040    1.46  31.6%
+        32    1976      95,227     192,320    2.02  50.5%
+        64    1765     175,326     508,032    2.90  65.5%
+       128    1398     268,815   1,160,960    4.32  76.8%
+       256    1049     375,816   2,318,848    6.17  83.8%
+       512     835     514,121   4,423,680    8.60  88.4%
+
+  [32b] Total BP-CG-REPLAY entries: 7608
+  [32b] Overall: real=1,567,803 padded=9,626,720 avg_ratio=6.14x waste=83.7%
+  [32b] By target_bs:
+      bs   count        real      padded   ratio   waste
+       2    1520     131,664     292,928    2.22  55.1%
+       4    3187     426,457   1,560,992    3.66  72.7%
+       8    1851     433,141   2,531,456    5.84  82.9%
+      16     869     406,218   3,279,360    8.07  87.6%
+      32     181     170,323   1,961,984   11.52  91.3%
+  [32b] By target_seq_len:
+       seq   count        real      padded   ratio   waste
+         8      15         243         288    1.19  15.6%
+        16     442      13,511      22,208    1.64  39.2%
+        32    1755     102,121     243,584    2.39  58.1%
+        64    1859     201,597     680,192    3.37  70.4%
+       128    1507     304,698   1,446,400    4.75  78.9%
+       256    1153     411,855   2,661,888    6.46  84.5%
+       512     877     533,778   4,572,160    8.57  88.3%
+
+================================================================================
+  2) Forward Path Distribution (FWD-PATH)
+================================================================================
+  [7b/piecewise_cg] Total FWD-PATH entries: 23986
+    path=piecewise_cg: count=23,986 avg_bs=2.5 max_bs=56 bs=1_frac=56.5%
+
+  [7b/batch_cg] Total FWD-PATH entries: 23162
+    path=batch_prefill_cg: count=7,768 avg_bs=4.4 max_bs=32 bs=1_frac=0.0%
+    path=piecewise_cg: count=15,394 avg_bs=1.7 max_bs=56 bs=1_frac=93.5%
+
+  [32b/piecewise_cg] Total FWD-PATH entries: 21795
+    path=piecewise_cg: count=21,795 avg_bs=2.8 max_bs=53 bs=1_frac=58.5%
+
+  [32b/batch_cg] Total FWD-PATH entries: 20464
+    path=batch_prefill_cg: count=7,608 avg_bs=4.9 max_bs=31 bs=1_frac=0.0%
+    path=piecewise_cg: count=12,856 avg_bs=1.8 max_bs=57 bs=1_frac=92.4%
+
+================================================================================
+  3) Prefill Batch Size Distribution
+================================================================================
+  [7b/vanilla] Prefill batches: 19,486
+    avg_new_seq=3.1 max_new_seq=55 avg_new_token=236.8 max_new_token=8192
+    top new_seq counts: 2:6483, 1:5738, 3:3157, 4:884, 5:793, 6:773, 10:250, 7:246, 9:234, 8:208
+
+  [7b/piecewise_cg] Prefill batches: 23,986
+    avg_new_seq=2.5 max_new_seq=56 avg_new_token=192.3 max_new_token=8192
+    top new_seq counts: 1:13547, 3:3457, 2:3152, 5:920, 4:718, 6:568, 7:383, 8:322, 9:254, 10:113
+
+  [7b/batch_cg] Prefill batches: 23,162
+    avg_new_seq=2.6 max_new_seq=56 avg_new_token=199.2 max_new_token=8192
+    top new_seq counts: 1:14400, 2:4137, 3:1535, 8:440, 4:429, 7:317, 5:298, 6:289, 9:242, 15:131
+
+  [32b/vanilla] Prefill batches: 16,000
+    avg_new_seq=3.8 max_new_seq=63 avg_new_token=288.5 max_new_token=8192
+    top new_seq counts: 1:4797, 2:3964, 3:2190, 4:1411, 5:1050, 6:500, 10:377, 7:289, 8:243, 11:221
+
+  [32b/piecewise_cg] Prefill batches: 21,795
+    avg_new_seq=2.8 max_new_seq=53 avg_new_token=211.8 max_new_token=8192
+    top new_seq counts: 1:12741, 2:4024, 6:1091, 5:1090, 3:882, 10:305, 7:205, 9:205, 8:202, 12:189
+
+  [32b/batch_cg] Prefill batches: 20,464
+    avg_new_seq=2.9 max_new_seq=57 avg_new_token=225.6 max_new_token=8192
+    top new_seq counts: 1:11875, 3:2845, 2:1601, 5:1239, 6:719, 4:558, 11:381, 7:179, 9:156, 12:133
+
+Pre-experiment analysis complete. Output dir: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_exp9_12_2026-03-02/pre_experiment

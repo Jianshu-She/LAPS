@@ -1,0 +1,42 @@
+
+=== Test 1: Very Short Prompts — Piecewise vs Vanilla ===
+
+  --- 8tok ---
+  Setting               cc=1    cc=2    cc=3    cc=4  
+  ----------------------------------------------------
+  vanilla                  194     385     576     759  tok/s
+  piecewise_cg             190     343     407     541  tok/s
+  pw/vanilla             0.98x   0.89x   0.71x   0.71x
+
+  Setting               cc=1    cc=2    cc=3    cc=4    (mean TTFT ms)
+  ----------------------------------------------------
+  vanilla                 40.2    40.4    40.4    40.9
+  piecewise_cg            41.1    45.4    57.4    57.4
+
+  --- 16tok ---
+  Setting               cc=1    cc=2    cc=3    cc=4  
+  ----------------------------------------------------
+  vanilla                  386     763    1133    1489  tok/s
+  piecewise_cg             376     538     804    1066  tok/s
+  pw/vanilla             0.97x   0.71x   0.71x   0.72x
+
+  Setting               cc=1    cc=2    cc=3    cc=4    (mean TTFT ms)
+  ----------------------------------------------------
+  vanilla                 40.1    40.4    40.8    41.4
+  piecewise_cg            41.2    57.5    57.6    57.9
+
+
+=== Test 2: 1000 Prompts with Flush — Piecewise vs Vanilla ===
+
+Setting               cc=1     cc=2     cc=4     cc=8     cc=16    cc=32    cc=64    cc=128   (tok/s)
+--------------------------------------------------------------------------------------------
+vanilla                  2447     4213     5386     7479     9065     9890    10472    10612
+piecewise_cg             2406     3247     5211     7124     8787     9276     9849    10037
+pw/vanilla              0.98x    0.77x    0.97x    0.95x    0.97x    0.94x    0.94x    0.95x
+
+Setting               cc=1     cc=2     cc=4     cc=8     cc=16    cc=32    cc=64    cc=128   (mean TTFT ms)
+--------------------------------------------------------------------------------------------
+vanilla                  47.5     55.1     86.2    124.0    203.9    374.0    700.1   1362.2
+piecewise_cg             48.3     71.5     89.0    130.2    210.6    397.9    742.8   1443.7
+
+Done. Results in: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_piecewise_vs_vanilla_2026-03-02/

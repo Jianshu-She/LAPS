@@ -1,0 +1,37 @@
+{
+  "args": {
+    "base_url": "http://127.0.0.1:30003",
+    "endpoint": "/v1/chat/completions",
+    "model": "Qwen/Qwen2.5-32B",
+    "concurrency": 64,
+    "num_requests": 10000,
+    "timeout": 120.0,
+    "temperature": 0.7,
+    "max_tokens": 1,
+    "prompt_file": "/mnt/weka/home/jianshu.she/routing_system/sglang/prefill_interfere/scheduling/lmsys-chat/dataset/human_prompts_stream_10000.jsonl",
+    "output_dir": "/mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_exp9_12_2026-03-02/exp12/vanilla_kv180k/cc64",
+    "milestone_step": 1000,
+    "http2": true,
+    "no_http2": false,
+    "desc": "exp12_vanilla_kv180k_cc64"
+  },
+  "total_requests": 10000,
+  "success": 10000,
+  "fail": 0,
+  "wall_time_sec": 80.2539445348084,
+  "rps": 124.60446720675166,
+  "latency_ms": {
+    "avg": 510.75693703452123,
+    "p50": 409.40281888470054,
+    "p90": 923.6872370820493,
+    "p95": 1066.7918778490275,
+    "p99": 1628.193873912096,
+    "max": 3521.632742835209
+  },
+  "tokens": {
+    "total_prompt_tokens": 922571,
+    "total_completion_tokens": 10000,
+    "avg_prompt_tokens": 92.2571,
+    "avg_completion_tokens": 1.0
+  }
+}

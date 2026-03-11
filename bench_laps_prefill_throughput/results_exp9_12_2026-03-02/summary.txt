@@ -1,0 +1,155 @@
+
+====================================================================================================
+  EXPERIMENT 9: Uniform Dataset (7B, 40-80 token prompts)
+  Tests: H1 (padding) vs H3 (batching)
+====================================================================================================
+
+  --- RPS (requests/sec) ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  vanilla                  155.1     565.4     632.7
+  piecewise_cg             184.7     636.3     649.6
+  batch_cg                 199.8     480.6     575.8
+
+  --- Speedup vs Exp9 vanilla ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  vanilla                 1.000x    1.000x    1.000x
+  piecewise_cg            1.191x    1.125x    1.027x
+  batch_cg                1.288x    0.850x    0.910x
+
+  --- Exp9 (uniform) vs Exp8 (mixed) RPS ---
+  Setting               exp9/4    exp8/4    exp9/32   exp8/32   exp9/64   exp8/64 
+  --------------------------------------------------------------------------------
+  vanilla                  155.1     128.8     565.4     415.2     632.7     442.3
+  piecewise_cg             184.7     170.9     636.3     411.4     649.6     435.5
+  batch_cg                 199.8     172.1     480.6     143.3     575.8     211.2
+
+  INTERPRETATION:
+  - If CG matches vanilla w/ uniform data → H1 (padding waste) is the cause
+  - If CG still slower w/ uniform data   → H3 (batching degradation) is the cause
+
+====================================================================================================
+  EXPERIMENT 10: Piecewise CG Max-Tokens Sweep (7B)
+  Tests: H3 (batching degradation) for piecewise CG
+====================================================================================================
+
+  --- RPS (requests/sec) ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  exp8_vanilla             128.8     200.7     415.2     442.3
+  exp8_piecewise_cg        170.9     290.6     411.4     435.5
+  ------------------------------------------------------------
+  piecewise_cap256         167.7     284.7     430.3     443.9
+  piecewise_cap512         172.2     294.4     450.4     445.2
+  piecewise_cap1024        174.1     296.1     442.4     435.4
+
+  --- Speedup vs Exp8 vanilla ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  exp8_piecewise_cg       1.327x    1.448x    0.991x    0.985x
+  piecewise_cap256        1.302x    1.419x    1.036x    1.004x
+  piecewise_cap512        1.337x    1.467x    1.085x    1.007x
+  piecewise_cap1024       1.351x    1.476x    1.066x    0.985x
+
+  INTERPRETATION:
+  - cap256 best at cc=64 → H3 (lower cap forces eager, better batching)
+  - cap256 worst at cc=4 → small batches miss CG benefit
+  - Crossover point reveals optimal adaptive cap
+
+====================================================================================================
+  EXPERIMENT 11: Batch CG Grid Density (7B)
+  Tests: H1 (padding waste) for batch_cg
+====================================================================================================
+
+  --- RPS (requests/sec) ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  exp8_vanilla             128.8     200.7     415.2     442.3
+  exp8_batch_cg            172.1     204.9     143.3     211.2
+  ------------------------------------------------------------
+  batch_cg_dense           183.5     227.6     182.5     246.3
+  batch_cg_vdense          182.7     241.9     197.4     257.5
+
+  --- Speedup vs Exp8 vanilla ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  exp8_batch_cg           1.336x    1.021x    0.345x    0.478x
+  batch_cg_dense          1.425x    1.134x    0.440x    0.557x
+  batch_cg_vdense         1.418x    1.206x    0.475x    0.582x
+
+  INTERPRETATION:
+  - Dense grid helps → H1 (padding waste is the bottleneck)
+  - Dense grid no help → H3 (batching degradation, not padding)
+
+====================================================================================================
+  EXPERIMENT 12: KV Cache / Memory Pressure (32B)
+  Tests: H2 (memory pressure)
+====================================================================================================
+
+  --- RPS (requests/sec) ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  exp8_vanilla              59.2     119.6     124.7
+  exp8_piecewise_cg         52.8     112.8     116.3
+  exp8_batch_cg             42.2      35.1      44.6
+  --------------------------------------------------
+  vanilla_kv180k            62.1     119.8     124.6
+  vanilla_kv120k            62.2     119.8     122.4
+
+  --- Speedup vs Exp8 vanilla (full KV, 32B) ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  vanilla_kv180k          1.049x    1.001x    0.999x
+  vanilla_kv120k          1.051x    1.002x    0.981x
+
+  INTERPRETATION:
+  - No change → H2 refuted (memory is not the issue)
+  - Degradation → H2 confirmed (CG memory reduces available KV cache)
+
+====================================================================================================
+  DIAGNOSIS MATRIX
+====================================================================================================
+
+  | Result                                    | Cause           | Implication                |
+  |-------------------------------------------|-----------------|----------------------------|
+  | Exp 9: CG matches vanilla w/ uniform data | H1 (padding)    | Optimize grid granularity  |
+  | Exp 9: CG still slower w/ uniform data    | H3 (batching)   | Need scheduling-aware CG   |
+  | Exp 10: lower cap -> better at high cc    | H3 (batching)   | Adaptive cap per load      |
+  | Exp 11: dense grid helps batch_cg         | H1 (padding)    | Ship denser default grid   |
+  | Exp 12: reduced KV has no effect          | H2 refuted      | Memory is not the issue    |
+
+====================================================================================================
+  LATENCY SUMMARY (avg ms)
+====================================================================================================
+  --- Exp 9 ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  vanilla                   25.6      55.8      99.7
+  piecewise_cg              21.5      49.7      97.4
+  batch_cg                  19.9      66.0     110.0
+
+  --- Exp 10 ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  piecewise_cap256          23.7      27.8      73.2     142.0
+  piecewise_cap512          23.1      26.9      70.1     141.7
+  piecewise_cap1024         22.8      26.8      71.4     145.0
+
+  --- Exp 11 ---
+  Setting               cc=4      cc=8      cc=32     cc=64   
+  ------------------------------------------------------------
+  batch_cg_dense            21.7      34.8     173.7     256.3
+  batch_cg_vdense           21.8      32.8     160.5     245.1
+
+  --- Exp 12 ---
+  Setting               cc=4      cc=32     cc=64   
+  --------------------------------------------------
+  vanilla_kv180k            64.0     265.9     510.8
+  vanilla_kv120k            64.0     265.9     519.7
+
+
+=== Fail Count Check ===
+  All runs: 0 failures
+
+Done. Results in: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_exp9_12_2026-03-02/

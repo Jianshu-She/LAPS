@@ -1,0 +1,41 @@
+
+====================================================================================================
+  7B MODEL: tp=4 RESULTS
+====================================================================================================
+
+  --- RPS (requests/sec) ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  exp13_vanilla_tp1            135.0     204.1     411.4     450.2
+  exp13_batch_cg_v2_tp1        158.5     236.8     391.5     441.3
+  exp13_piecewise_cap512_tp1     170.3     293.4     449.6     439.4
+  ----------------------------------------------------------------
+  vanilla_tp4                  105.7     150.5     389.2     533.1
+  batch_cg_v2_tp4              136.3     218.5     426.1     528.2
+  piecewise_cap512_tp4         126.9     246.2     453.8     531.2
+
+  --- Speedup vs tp=4 vanilla ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  vanilla_tp4                  1.000x     1.000x     1.000x     1.000x
+  batch_cg_v2_tp4              1.289x     1.452x     1.095x     0.991x
+  piecewise_cap512_tp4         1.200x     1.636x     1.166x     0.996x
+
+  --- tp=4 vs tp=1 (same setting) ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  vanilla_tp4 vs tp1           0.783x     0.738x     0.946x     1.184x
+  batch_cg_v2_tp4 vs tp1       0.859x     0.923x     1.088x     1.197x
+  piecewise_cap512_tp4 vs tp1     0.745x     0.839x     1.009x     1.209x
+
+  --- Latency (avg ms) ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  vanilla_tp4                   37.6      52.8      81.1     118.2
+  batch_cg_v2_tp4               29.1      36.1      73.8     119.0
+  piecewise_cap512_tp4          31.3      32.1      69.4     118.3
+
+=== Fail Count Check ===
+  All runs: 0 failures
+
+Done. Results in: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_exp14b_2026-03-03/

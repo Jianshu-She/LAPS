@@ -1,0 +1,18 @@
+{
+  "completed": 500,
+  "failed": 0,
+  "num_prompts": 500,
+  "total_duration_s": 2.91,
+  "total_input_tokens": 51162,
+  "prefill_throughput_tok_s": 17603.1,
+  "request_throughput_req_s": 172.0,
+  "median_ttft_ms": 270.71,
+  "mean_ttft_ms": 362.09,
+  "p50_ttft_ms": 270.71,
+  "p90_ttft_ms": 740.49,
+  "p99_ttft_ms": 797.43,
+  "max_new_tokens": 1,
+  "seed": 42,
+  "concurrency": 64,
+  "request_rate": null
+}

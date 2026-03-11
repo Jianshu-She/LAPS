@@ -1,0 +1,68 @@
+
+=== Uniform Dataset (40-80 tokens) ===
+
+Setting                    cc=1     cc=2     cc=4     cc=8     cc=16    cc=32  
+-------------------------------------------------------------------------------
+vanilla                       1340     2511     3425     5041     6269     7460
+piecewise_cg                  1324     1898     3374     4860     6264     6948
+batch_prefill_cg              1334     1905     2370     2508     2362     2560
+batch_prefill_cg_fine         1329     1904     2885     3001     4865     6983
+batch_prefill_cg_small        1334     1904     3385     4868     6439     7020
+
+=== 10K Dataset (variable lengths) ===
+
+Setting                    cc=8     cc=32  
+-------------------------------------------
+vanilla                       5251     7952
+piecewise_cg                  5134     7454
+batch_prefill_cg              2834     2150
+batch_prefill_cg_fine         3238     6884
+batch_prefill_cg_small        5122     7570
+
+=== Speedup vs piecewise_cg (uniform) ===
+
+Setting                    cc=1     cc=2     cc=4     cc=8     cc=16    cc=32  
+-------------------------------------------------------------------------------
+vanilla                      1.01x    1.32x    1.02x    1.04x    1.00x    1.07x
+piecewise_cg                 1.00x    1.00x    1.00x    1.00x    1.00x    1.00x
+batch_prefill_cg             1.01x    1.00x    0.70x    0.52x    0.38x    0.37x
+batch_prefill_cg_fine        1.00x    1.00x    0.86x    0.62x    0.78x    1.01x
+batch_prefill_cg_small       1.01x    1.00x    1.00x    1.00x    1.03x    1.01x
+
+=== BP-CG Padding Analysis (from server logs) ===
+
+  batch_prefill_cg:
+    BP-CG replays:   2543
+    Mean ratio:      5.21x
+    Median ratio:    4.23x
+    Overall ratio:   6.51x
+    Total real:      775,244
+    Total padded:    5,047,760
+    Fwd paths (6352 total):
+      piecewise_cg           3809  (60.0%)
+      batch_prefill_cg       2543  (40.0%)
+
+  batch_prefill_cg_fine:
+    BP-CG replays:   2110
+    Mean ratio:      2.91x
+    Median ratio:    2.53x
+    Overall ratio:   3.40x
+    Total real:      465,454
+    Total padded:    1,583,942
+    Fwd paths (6119 total):
+      piecewise_cg           4009  (65.5%)
+      batch_prefill_cg       2110  (34.5%)
+
+  batch_prefill_cg_small:
+    BP-CG replays:   57
+    Mean ratio:      2.06x
+    Median ratio:    2.06x
+    Overall ratio:   1.98x
+    Total real:      1,732
+    Total padded:    3,424
+    Fwd paths (6362 total):
+      piecewise_cg           6305  (99.1%)
+      batch_prefill_cg         57  (0.9%)
+
+
+Done. Results in: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_nodisagg_2026-03-02/

@@ -609,6 +609,15 @@ class ServerArgs:
     batch_prefill_max_seq_len: int = 256
     batch_prefill_batch_sizes: Optional[List[int]] = None
     batch_prefill_seq_lengths: Optional[List[int]] = None
+    batch_prefill_max_padding_ratio: float = 2.0
+    batch_prefill_high_cc_padding_ratio: float = 4.0
+    # Piecewise CG gating
+    piecewise_extend_max_bs: int = 4
+    piecewise_max_waiting_reqs: int = 8
+    # LAPS (Length-Aware Prefill Scheduler) settings
+    enable_laps_scheduler: bool = False
+    laps_length_threshold: int = 256
+    laps_max_consecutive_short: int = 4
     torchao_config: str = ""
     enable_nan_detection: bool = False
     enable_p2p_check: bool = False
@@ -1024,7 +1033,7 @@ class ServerArgs:
         if self.batch_prefill_batch_sizes is None:
             self.batch_prefill_batch_sizes = [1, 2, 4, 8]
         if self.batch_prefill_seq_lengths is None:
-            self.batch_prefill_seq_lengths = [16, 32, 64, 128, 256]
+            self.batch_prefill_seq_lengths = [8, 16, 32, 64, 128, 256]
         # Filter out seq lengths that exceed the max
         self.batch_prefill_seq_lengths = [
             s for s in self.batch_prefill_seq_lengths if s <= self.batch_prefill_max_seq_len
@@ -2565,6 +2574,12 @@ class ServerArgs:
                 logger.warning(
                     "Cuda graph is disabled for prefill server when piecewise cuda graph is not enabled."
                 )
+
+        if self.enable_laps_scheduler and self.disaggregation_mode != "prefill":
+            logger.warning(
+                "LAPS scheduler is only supported in disaggregation prefill mode. Disabling."
+            )
+            self.enable_laps_scheduler = False
 
     def _handle_encoder_disaggregation(self):
         if self.enable_prefix_mm_cache and not self.encoder_only:
@@ -4644,6 +4659,48 @@ class ServerArgs:
             nargs="+",
             default=None,
             help="List of sequence lengths to capture for batch prefill CUDA graph (default: [16, 32, 64, 128, 256]).",
+        )
+        parser.add_argument(
+            "--batch-prefill-max-padding-ratio",
+            type=float,
+            default=ServerArgs.batch_prefill_max_padding_ratio,
+            help="Maximum padding ratio (padded_tokens / real_tokens) for batch prefill CG. Reject if exceeded (default: 2.0).",
+        )
+        parser.add_argument(
+            "--batch-prefill-high-cc-padding-ratio",
+            type=float,
+            default=ServerArgs.batch_prefill_high_cc_padding_ratio,
+            help="Relaxed padding ratio for batch prefill CG when batch_size > piecewise_extend_max_bs (default: 4.0).",
+        )
+        parser.add_argument(
+            "--piecewise-extend-max-bs",
+            type=int,
+            default=ServerArgs.piecewise_extend_max_bs,
+            help="Max batch size for piecewise CG extend. Larger batches fall to eager (default: 4).",
+        )
+        parser.add_argument(
+            "--piecewise-max-waiting-reqs",
+            type=int,
+            default=ServerArgs.piecewise_max_waiting_reqs,
+            help="Max waiting queue depth for piecewise CG extend. Skip piecewise CG when queue is deeper (default: 8).",
+        )
+        parser.add_argument(
+            "--enable-laps-scheduler",
+            action="store_true",
+            help="Enable LAPS (Length-Aware Prefill Scheduler) dual-queue scheduling for PD disaggregation prefill.",
+        )
+        parser.add_argument(
+            "--laps-length-threshold",
+            type=int,
+            default=ServerArgs.laps_length_threshold,
+            help="Token length threshold for LAPS scheduler to separate short/long requests (default: 256).",
+        )
+        parser.add_argument(
+            "--laps-max-consecutive-short",
+            type=int,
+            default=ServerArgs.laps_max_consecutive_short,
+            help="Max consecutive short-queue batches before forcing a long-queue batch (default: 4). "
+            "Prevents long-request starvation at high concurrency.",
         )
         parser.add_argument(
             "--torchao-config",

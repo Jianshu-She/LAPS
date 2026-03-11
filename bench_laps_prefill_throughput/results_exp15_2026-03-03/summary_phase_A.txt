@@ -1,0 +1,35 @@
+
+================================================================================
+  RPS (requests/sec)
+================================================================================
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  exp13_vanilla                135.0     204.1     411.4     450.2
+  exp13_batch_cg_v2            158.5     236.8     391.5     441.3
+  exp13_piecewise_cap512       170.3     293.4     449.6     439.4
+  ----------------------------------------------------------------
+  v3_pad2                      146.2     221.9     407.4     446.0
+  v3_hybrid                      N/A       N/A       N/A       N/A
+  v3_full                        N/A       N/A       N/A       N/A
+
+  --- Speedup vs exp13 vanilla ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  exp13_batch_cg_v2            1.174x     1.160x     0.952x     0.980x
+  exp13_piecewise_512          1.261x     1.437x     1.093x     0.976x
+  v3_pad2                      1.082x     1.087x     0.990x     0.991x
+  v3_hybrid                      N/A       N/A       N/A       N/A
+  v3_full                        N/A       N/A       N/A       N/A
+
+  --- Speedup vs exp13 batch_cg_v2 ---
+  Setting                   cc=4      cc=8      cc=32     cc=64   
+  ----------------------------------------------------------------
+  exp13_piecewise_512          1.074x     1.239x     1.148x     0.996x
+  v3_pad2                      0.922x     0.937x     1.041x     1.011x
+  v3_hybrid                      N/A       N/A       N/A       N/A
+  v3_full                        N/A       N/A       N/A       N/A
+
+=== Fail Count Check ===
+  All runs: 0 failures
+
+Done. Results in: /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_exp15_2026-03-03/

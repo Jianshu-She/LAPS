@@ -1,0 +1,28 @@
+
+=== Exp 2: Uniform dataset (batch_prefill_cg vs piecewise_cg) ===
+  cc=8: batch_prefill_cg=2859 tok/s, piecewise_cg=4819 tok/s
+  cc=32: batch_prefill_cg=18280 tok/s, piecewise_cg=18590 tok/s
+
+=== Exp 3: 500 prompts with flush ===
+  BP-CG:
+    cc=1    →     1923 tok/s
+    cc=2    →     3345 tok/s
+    cc=4    →     4169 tok/s
+    cc=8    →     4204 tok/s
+    cc=16   →     3936 tok/s
+    cc=32   →     3618 tok/s
+    cc=64   →     4952 tok/s
+    cc=128  →     7686 tok/s
+  Vanilla:
+    cc=1    →     1925 tok/s
+    cc=2    →     3004 tok/s
+    cc=4    →     4526 tok/s
+    cc=8    →     6478 tok/s
+    cc=16   →     8541 tok/s
+    cc=32   →     9705 tok/s
+    cc=64   →     9045 tok/s
+    cc=128  →    10335 tok/s
+
+=== Exp 4: 10K prompts with flush ===
+  cc=8: batch_prefill_cg=2947 tok/s, vanilla=4558 tok/s
+  cc=128: batch_prefill_cg=4956 tok/s, vanilla=8307 tok/s

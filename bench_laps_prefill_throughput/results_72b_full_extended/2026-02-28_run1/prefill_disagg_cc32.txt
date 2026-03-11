@@ -1,0 +1,20 @@
+  Shuffled prompts with seed=42
+Benchmark: 500 prompts, max_new_tokens=1, concurrency=32
+
+============================================================
+  PREFILL THROUGHPUT RESULTS
+============================================================
+  completed:            500 / 500
+  failed:               0
+  total_duration:       3.33 s
+  total_input_tokens:   51162
+  prefill_throughput:   15344.4 tokens/s
+  request_throughput:   150.0 req/s
+  median_ttft:          191.51 ms
+  mean_ttft:            208.70 ms
+  p50_ttft:             191.51 ms
+  p90_ttft:             271.29 ms
+  p99_ttft:             354.23 ms
+============================================================
+
+Results saved to /mnt/weka/home/jianshu.she/graph/sglang/bench_laps_prefill_throughput/results_72b_full_extended/2026-02-28_run1/prefill_disagg_cc32.json

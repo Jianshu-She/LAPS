@@ -1218,6 +1218,9 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
     # This is an optimization to reduce the overhead of the prefill check.
     batch_is_full: bool = False
 
+    # Number of requests still in the waiting queue (for piecewise CG gating)
+    num_waiting_reqs: int = 0
+
     # For chunked prefill in PP
     chunked_req: Optional[Req] = None
 
@@ -2237,6 +2240,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             mamba_track_indices=self.mamba_track_indices,
             mamba_track_mask=self.mamba_track_mask,
             mamba_track_seqlens=self.mamba_track_seqlens,
+            num_waiting_reqs=self.num_waiting_reqs,
         )
 
     def copy(self):
@@ -2419,6 +2423,9 @@ class ModelWorkerBatch:
 
     # For hidden states before normal
     return_hidden_states_before_norm: bool = False
+
+    # Number of requests still in the waiting queue (for piecewise CG gating)
+    num_waiting_reqs: int = 0
 
     # For mamba state tracking
     mamba_track_indices: Optional[torch.Tensor] = None  # shape: [b], int64

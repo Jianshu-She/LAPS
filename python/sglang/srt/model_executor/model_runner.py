@@ -2316,22 +2316,28 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         )
 
         if can_run_batch_prefill:
+            logger.info(f"FWD-PATH path=batch_prefill_cg bs={forward_batch.batch_size}")
             return (
                 self.piecewise_cuda_graph_runner.replay_batch_prefill(forward_batch, **kwargs),
                 True,
             )
 
-        # Check single-sequence piecewise CUDA graph
+        # Check single-sequence piecewise CUDA graph (gated by batch size and queue depth)
         can_run_graph = (
             self.piecewise_cuda_graph_runner is not None
+            and forward_batch.batch_size <= self.server_args.piecewise_extend_max_bs
+            and forward_batch.num_waiting_reqs <= self.server_args.piecewise_max_waiting_reqs
             and self.piecewise_cuda_graph_runner.can_run(forward_batch)
         )
 
         if can_run_graph:
+            logger.info(f"FWD-PATH path=piecewise_cg bs={forward_batch.batch_size}")
             return (
                 self.piecewise_cuda_graph_runner.replay(forward_batch, **kwargs),
                 can_run_graph,
             )
+
+        logger.info(f"FWD-PATH path=eager bs={forward_batch.batch_size}")
 
         if not skip_attn_backend_init:
             self.attn_backend.init_forward_metadata(forward_batch)

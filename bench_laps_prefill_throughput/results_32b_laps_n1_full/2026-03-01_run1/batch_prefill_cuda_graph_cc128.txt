@@ -1,0 +1,3 @@
+  Shuffled prompts with seed=42
+Benchmark: 500 prompts, max_new_tokens=1, concurrency=128
+[FAIL] All requests failed!

@@ -377,6 +377,9 @@ class ForwardBatch(ForwardBatchDeepSeekMHAMixin):
     # For hidden states before normal
     return_hidden_states_before_norm: bool = False
 
+    # Number of requests still in the waiting queue (for piecewise CG gating)
+    num_waiting_reqs: int = 0
+
     @classmethod
     def init_new(
         cls,
@@ -421,6 +424,7 @@ class ForwardBatch(ForwardBatchDeepSeekMHAMixin):
             tbo_split_seq_index=batch.tbo_split_seq_index,
             dimensions=batch.dimensions,
             return_hidden_states_before_norm=batch.return_hidden_states_before_norm,
+            num_waiting_reqs=batch.num_waiting_reqs,
         )
         device = model_runner.device
 

@@ -19,6 +19,7 @@ import bisect
 import dataclasses
 import gc
 import logging
+import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
@@ -287,6 +288,15 @@ class PiecewiseCudaGraphRunner:
         # Initialize batch prefill settings
         self.batch_prefill_enabled = (
             model_runner.server_args.enable_batch_prefill_cuda_graph
+        )
+        self.batch_prefill_max_padding_ratio = (
+            model_runner.server_args.batch_prefill_max_padding_ratio
+        )
+        self.batch_prefill_high_cc_padding_ratio = (
+            model_runner.server_args.batch_prefill_high_cc_padding_ratio
+        )
+        self.piecewise_extend_max_bs = (
+            model_runner.server_args.piecewise_extend_max_bs
         )
         if self.batch_prefill_enabled:
             self.batch_prefill_batch_sizes = sorted(
@@ -797,9 +807,6 @@ class PiecewiseCudaGraphRunner:
         if self.is_multimodal:
             return False
 
-        if forward_batch.batch_size <= 1:
-            return False
-
         # Get max extend length
         max_extend_len = 0
         for seq_len in forward_batch.extend_seq_lens_cpu:
@@ -810,7 +817,45 @@ class PiecewiseCudaGraphRunner:
         target = self._find_batch_prefill_graph(
             forward_batch.batch_size, max_extend_len
         )
-        return target is not None
+
+        # Compute extend lens for logging and padding ratio check
+        extend_lens_cpu = [
+            v.item() if hasattr(v, "item") else int(v)
+            for v in forward_batch.extend_seq_lens_cpu
+        ]
+        real_tokens = sum(extend_lens_cpu)
+        bs = forward_batch.batch_size
+
+        # Debug: log when batch prefill CG cannot run
+        if target is None:
+            if bs > max(self.batch_prefill_batch_sizes):
+                reason = f"bs_too_large({bs})"
+            elif max_extend_len > max(self.batch_prefill_seq_lengths):
+                reason = f"seq_too_long({max_extend_len})"
+            else:
+                reason = f"no_graph({bs},{max_extend_len})"
+            logger.info(
+                f"BP-CG-MISS reason={reason} bs={bs} max_extend_len={max_extend_len} "
+                f"real_tokens={real_tokens} extend_lens={extend_lens_cpu}"
+            )
+            return False
+
+        # Compute padding ratio and reject if too wasteful
+        target_bs, target_seq_len = target
+        padded_tokens = target_bs * target_seq_len
+        ratio = padded_tokens / max(real_tokens, 1)
+        effective_threshold = self.batch_prefill_max_padding_ratio
+        if bs > self.piecewise_extend_max_bs:
+            effective_threshold = self.batch_prefill_high_cc_padding_ratio
+        if ratio > effective_threshold:
+            logger.info(
+                f"BP-CG-MISS reason=padding_ratio({ratio:.2f}) bs={bs} max_extend_len={max_extend_len} "
+                f"real_tokens={real_tokens} padded_tokens={padded_tokens} target=({target_bs},{target_seq_len}) "
+                f"extend_lens={extend_lens_cpu}"
+            )
+            return False
+
+        return True
 
     def _find_batch_prefill_graph(
         self, actual_bs: int, max_extend_len: int
@@ -999,6 +1044,16 @@ class PiecewiseCudaGraphRunner:
             actual_bs, max_extend_len
         )
         total_tokens = target_bs * target_seq_len
+
+        # Debug: log padding ratio
+        real_tokens = sum(extend_lens_cpu)
+        padded_tokens = target_bs * target_seq_len
+        logger.info(
+            f"BP-CG-REPLAY actual_bs={actual_bs} target_bs={target_bs} "
+            f"max_extend_len={max_extend_len} target_seq_len={target_seq_len} "
+            f"real_tokens={real_tokens} padded_tokens={padded_tokens} "
+            f"ratio={padded_tokens/max(real_tokens,1):.2f}"
+        )
 
         # 1. Zero padded buffers, then RIGHT-ALIGN real data in each slot.
         #
