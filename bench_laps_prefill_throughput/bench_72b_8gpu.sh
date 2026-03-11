@@ -147,7 +147,7 @@ run_concurrency_sweep "vanilla_sglang"
 launch_servers "disaggregation" "$LAPS_ARGS"
 run_concurrency_sweep "disaggregation"
 
-launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
+launch_servers "laps" "--enable-laps"
 run_concurrency_sweep "laps"
 
 # ───────────────────────── generate summary ─────────────────────────

@@ -73,10 +73,7 @@ All experiments run under **PD disaggregation** (Mooncake KV transfer backend) w
 ```bash
 python -m sglang.launch_server \
     --model <model> \
-    --enable-laps-scheduler \
-    --laps-length-threshold 256 \
-    --enable-piecewise-cuda-graph \
-    --enable-batch-prefill-cuda-graph
+    --enable-laps
 ```
 
 ## Documentation

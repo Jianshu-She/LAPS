@@ -610,6 +610,7 @@ class ServerArgs:
     batch_prefill_batch_sizes: Optional[List[int]] = None
     batch_prefill_seq_lengths: Optional[List[int]] = None
     # LAPS (Length-Aware Prefill Scheduler) settings
+    enable_laps: bool = False
     enable_laps_scheduler: bool = False
     laps_length_threshold: int = 256
     torchao_config: str = ""
@@ -2568,6 +2569,12 @@ class ServerArgs:
                 logger.warning(
                     "Cuda graph is disabled for prefill server when piecewise cuda graph is not enabled."
                 )
+
+        # --enable-laps is a convenience flag that enables all LAPS components
+        if self.enable_laps:
+            self.enable_piecewise_cuda_graph = True
+            self.enable_batch_prefill_cuda_graph = True
+            self.enable_laps_scheduler = True
 
         if self.enable_laps_scheduler and self.disaggregation_mode != "prefill":
             logger.warning(
@@ -4653,6 +4660,11 @@ class ServerArgs:
             nargs="+",
             default=None,
             help="List of sequence lengths to capture for batch prefill CUDA graph (default: [16, 32, 64, 128, 256]).",
+        )
+        parser.add_argument(
+            "--enable-laps",
+            action="store_true",
+            help="Enable LAPS (Length-Aware Prefill Scheduling). Automatically enables piecewise CUDA graph, batch prefill CUDA graph, and LAPS scheduler.",
         )
         parser.add_argument(
             "--enable-laps-scheduler",
