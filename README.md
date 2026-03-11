@@ -14,11 +14,11 @@ LAPS introduces a three-level scheduling framework that addresses this interfere
 
 ## Features
 
-| Feature | Branch | Description | Docs |
-|---|---|---|---|
-| Dual-Queue Scheduling | `laps-dual-queue` | Separates prefill requests into short/long queues to eliminate length interference | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
-| Waiting Window | `laps-waiting-window` | Accumulates same-length requests before dispatching to maximize batch utilization | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
-| Dynamic Allocation | `laps-dynamic-alloc` | Adjusts prefill/decode GPU ratio at runtime based on queue pressure | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
+| Feature | Description | Docs |
+|---|---|---|
+| Dual-Queue Scheduling | Separates prefill requests into short/long queues to eliminate length interference | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
+| Waiting Window | Accumulates same-length requests before dispatching to maximize batch utilization | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
+| Dynamic Allocation | Adjusts prefill/decode GPU ratio at runtime based on queue pressure | [docs/laps_scheduler.md](docs/laps_scheduler.md) |
 
 ## Benchmark Results
 
