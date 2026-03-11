@@ -10,7 +10,7 @@ In prefill-decode (PD) disaggregated LLM serving, prefill workers process prompt
 
 LAPS introduces a three-level scheduling framework that addresses this interference. **Dual-Queue Scheduling** separates short and long prefills into distinct queues so each batch contains similarly-sized sequences. **Waiting Window** adds a configurable delay to accumulate enough same-length requests for high-utilization batches. **Dynamic Allocation** adjusts the prefill-decode GPU split at runtime based on queue pressure, preventing either pipeline stage from becoming a bottleneck.
 
-![Architecture](docs/figures/architecture.png)
+![Architecture](Method.png)
 
 ## Features
 
