@@ -16,7 +16,9 @@ HOST="127.0.0.1"
 IB_DEVICE="mlx5_0"
 BACKEND="mooncake"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RESULTS_DIR="${SCRIPT_DIR}/results_7b_2gpu"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR="${SCRIPT_DIR}/results_7b_2gpu_${TIMESTAMP}"
+RAW_DIR="${RESULTS_DIR}/raw"
 PYTHON="/mnt/weka/home/jianshu.she/miniconda3/envs/laps/bin/python"
 
 NUM_PROMPTS=10000
@@ -26,8 +28,9 @@ PREFILL_GPUS="0"
 DECODE_GPUS="1"
 
 CONCURRENCY_LEVELS="1 2 4 8 16 32 64"
+SETTINGS="vanilla_sglang disaggregation laps"
 
-mkdir -p "$RESULTS_DIR"
+mkdir -p "$RAW_DIR"
 
 # ───────────────────────── helpers ─────────────────────────
 
@@ -77,7 +80,7 @@ launch_servers() {
         --disaggregation-bootstrap-port 9300 \
         --host $HOST --port $DECODE_PORT \
         --mem-fraction-static 0.85 \
-        > "${RESULTS_DIR}/${label}_decode.log" 2>&1 &
+        > "${RAW_DIR}/${label}_decode.log" 2>&1 &
 
     CUDA_VISIBLE_DEVICES=$PREFILL_GPUS $PYTHON -m sglang.launch_server \
         --model-path "$MODEL" \
@@ -89,7 +92,7 @@ launch_servers() {
         --host $HOST --port $PREFILL_PORT \
         --mem-fraction-static 0.85 \
         $prefill_extra_args \
-        > "${RESULTS_DIR}/${label}_prefill.log" 2>&1 &
+        > "${RAW_DIR}/${label}_prefill.log" 2>&1 &
 
     wait_ready "http://${HOST}:${PREFILL_PORT}/health" 300
     wait_ready "http://${HOST}:${DECODE_PORT}/health"  300
@@ -99,7 +102,7 @@ launch_servers() {
         --prefill "http://${HOST}:${PREFILL_PORT}" 9301 \
         --decode  "http://${HOST}:${DECODE_PORT}" \
         --host $HOST --port $ROUTER_PORT \
-        > "${RESULTS_DIR}/${label}_router.log" 2>&1 &
+        > "${RAW_DIR}/${label}_router.log" 2>&1 &
 
     wait_ready "http://${HOST}:${ROUTER_PORT}/health" 60
 
@@ -126,8 +129,8 @@ run_concurrency_sweep() {
             --num-prompts $NUM_PROMPTS \
             --max-new-tokens $MAX_NEW_TOKENS \
             --concurrency $cc \
-            --output "${RESULTS_DIR}/${label}_cc${cc}.json" \
-            2>&1 | tee "${RESULTS_DIR}/${label}_cc${cc}.txt"
+            --output "${RAW_DIR}/${label}_cc${cc}.json" \
+            2>&1 | tee "${RAW_DIR}/${label}_cc${cc}.txt"
         sleep 2
     done
 }
@@ -147,8 +150,109 @@ run_concurrency_sweep "disaggregation"
 launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
 run_concurrency_sweep "laps"
 
+# ───────────────────────── generate summary ─────────────────────────
+
+$PYTHON -c "
+import json, os
+
+raw = '${RAW_DIR}'
+settings = '${SETTINGS}'.split()
+ccs = [int(c) for c in '${CONCURRENCY_LEVELS}'.split()]
+
+def load(setting, cc):
+    p = os.path.join(raw, f'{setting}_cc{cc}.json')
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except:
+        return None
+
+lines = []
+lines.append('=' * 80)
+lines.append('  BENCHMARK SUMMARY: ${MODEL} (TP=${TP_SIZE})')
+lines.append('  Prefill GPUs: ${PREFILL_GPUS}  |  Decode GPUs: ${DECODE_GPUS}')
+lines.append('  Prompts: ${NUM_PROMPTS}  |  Max New Tokens: ${MAX_NEW_TOKENS}')
+lines.append('=' * 80)
+
+# RPS table
+lines.append('')
+lines.append('--- Request Throughput (req/s) ---')
+hdr = f'{\"Setting\":<20s}' + ''.join(f'  cc={cc:<5d}' for cc in ccs)
+lines.append(hdr)
+lines.append('-' * len(hdr))
+for s in settings:
+    row = f'{s:<20s}'
+    for cc in ccs:
+        d = load(s, cc)
+        row += f'  {d[\"request_throughput_req_s\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
+    lines.append(row)
+
+# Prefill throughput table
+lines.append('')
+lines.append('--- Prefill Throughput (tok/s) ---')
+lines.append(hdr)
+lines.append('-' * len(hdr))
+for s in settings:
+    row = f'{s:<20s}'
+    for cc in ccs:
+        d = load(s, cc)
+        row += f'  {d[\"prefill_throughput_tok_s\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
+    lines.append(row)
+
+# Latency table
+lines.append('')
+lines.append('--- Mean TTFT Latency (ms) ---')
+lines.append(hdr)
+lines.append('-' * len(hdr))
+for s in settings:
+    row = f'{s:<20s}'
+    for cc in ccs:
+        d = load(s, cc)
+        row += f'  {d[\"mean_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
+    lines.append(row)
+
+lines.append('')
+lines.append('--- P99 TTFT Latency (ms) ---')
+lines.append(hdr)
+lines.append('-' * len(hdr))
+for s in settings:
+    row = f'{s:<20s}'
+    for cc in ccs:
+        d = load(s, cc)
+        row += f'  {d[\"p99_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
+    lines.append(row)
+
+# Speedup vs vanilla
+lines.append('')
+lines.append('--- Speedup vs vanilla_sglang (RPS) ---')
+lines.append(hdr)
+lines.append('-' * len(hdr))
+for s in settings:
+    row = f'{s:<20s}'
+    for cc in ccs:
+        d = load(s, cc)
+        v = load('vanilla_sglang', cc)
+        if d and v and v['request_throughput_req_s'] > 0:
+            ratio = d['request_throughput_req_s'] / v['request_throughput_req_s']
+            row += f'  {ratio:>7.3f}x'
+        else:
+            row += f'  {\"N/A\":>8s}'
+    lines.append(row)
+
+lines.append('')
+lines.append('Raw results: raw/')
+lines.append('')
+
+text = '\n'.join(lines)
+print(text)
+
+with open(os.path.join('${RESULTS_DIR}', 'summary.txt'), 'w') as f:
+    f.write(text)
+" 2>&1 | tee "${RESULTS_DIR}/summary.txt"
+
 echo ""
 echo "============================================================"
 echo "  All 3 settings complete."
 echo "  Results in: ${RESULTS_DIR}/"
+echo "  Summary:    ${RESULTS_DIR}/summary.txt"
 echo "============================================================"
