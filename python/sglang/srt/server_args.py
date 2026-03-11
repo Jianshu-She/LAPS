@@ -2576,6 +2576,10 @@ class ServerArgs:
             self.enable_batch_prefill_cuda_graph = True
             self.enable_laps_scheduler = True
 
+        # batch prefill CG requires piecewise CG as its fallback path
+        if self.enable_batch_prefill_cuda_graph:
+            self.enable_piecewise_cuda_graph = True
+
         if self.enable_laps_scheduler and self.disaggregation_mode != "prefill":
             logger.warning(
                 "LAPS scheduler is only supported in disaggregation prefill mode. Disabling."
