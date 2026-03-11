@@ -12,6 +12,10 @@ LAPS introduces a three-level scheduling framework that addresses this interfere
 
 ![Architecture](Method.png)
 
+## MLSys Artifact Evaluation
+
+For MLSys artifact evaluation, please go directly to [bench_laps_prefill_throughput/](bench_laps_prefill_throughput/).
+
 ## Features
 
 | Feature | Description | Docs |
