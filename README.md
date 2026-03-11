@@ -71,14 +71,12 @@ All experiments run under **PD disaggregation** (Mooncake KV transfer backend) w
 ## Quick Start
 
 ```bash
-# Level 1: Dual-Queue Scheduling
-python -m sglang.launch_server --model <model> --enable-dual-queue
-
-# Level 2: + Waiting Window
-python -m sglang.launch_server --model <model> --enable-dual-queue --waiting-window-ms 50
-
-# Level 3: + Dynamic Allocation
-python -m sglang.launch_server --model <model> --enable-dual-queue --waiting-window-ms 50 --enable-dynamic-alloc
+python -m sglang.launch_server \
+    --model <model> \
+    --enable-laps-scheduler \
+    --laps-length-threshold 256 \
+    --enable-piecewise-cuda-graph \
+    --enable-batch-prefill-cuda-graph
 ```
 
 ## Documentation
