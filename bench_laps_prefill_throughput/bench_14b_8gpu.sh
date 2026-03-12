@@ -250,9 +250,18 @@ with open(os.path.join('${RESULTS_DIR}', 'summary.txt'), 'w') as f:
     f.write(text)
 " 2>&1 | tee "${RESULTS_DIR}/summary.txt"
 
+# ───────────────────────── generate plots ─────────────────────────
+
+echo "[plot] Generating plots..."
+$PYTHON "${SCRIPT_DIR}/plot_results.py" "${RESULTS_DIR}" \
+    --settings "${SETTINGS// /,}" \
+    --cc "${CONCURRENCY_LEVELS// /,}" \
+    2>&1 || echo "[plot] Warning: plotting failed (matplotlib may not be installed)"
+
 echo ""
 echo "============================================================"
 echo "  All 3 settings complete."
 echo "  Results in: ${RESULTS_DIR}/"
+echo "  Plots:      ${RESULTS_DIR}/plots/"
 echo "  Summary:    ${RESULTS_DIR}/summary.txt"
 echo "============================================================"
