@@ -2564,13 +2564,9 @@ class ServerArgs:
             self.disaggregation_prefill_pp = self.pp_size
             self.validate_disagg_tp_size(self.tp_size, self.disaggregation_decode_tp)
 
-            if not self.enable_piecewise_cuda_graph:
-                self.disable_cuda_graph = True
-                logger.warning(
-                    "Cuda graph is disabled for prefill server when piecewise cuda graph is not enabled."
-                )
-
         # --enable-laps is a convenience flag that enables all LAPS components
+        # Must expand before the piecewise CG check below, otherwise CUDA graph
+        # gets disabled even though LAPS needs it.
         if self.enable_laps:
             self.enable_piecewise_cuda_graph = True
             self.enable_batch_prefill_cuda_graph = True
@@ -2579,6 +2575,12 @@ class ServerArgs:
         # batch prefill CG requires piecewise CG as its fallback path
         if self.enable_batch_prefill_cuda_graph:
             self.enable_piecewise_cuda_graph = True
+
+        if self.disaggregation_mode == "prefill" and not self.enable_piecewise_cuda_graph:
+            self.disable_cuda_graph = True
+            logger.warning(
+                "Cuda graph is disabled for prefill server when piecewise cuda graph is not enabled."
+            )
 
         if self.enable_laps_scheduler and self.disaggregation_mode != "prefill":
             logger.warning(

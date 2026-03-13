@@ -64,10 +64,6 @@ SETTING_MARKERS = {
 METRICS = [
     ("request_throughput_req_s", "Request Throughput (req/s)"),
     ("prefill_throughput_tok_s", "Prefill Throughput (tok/s)"),
-    ("mean_ttft_ms", "Mean TTFT (ms)"),
-    ("p50_ttft_ms", "P50 TTFT (ms)"),
-    ("p90_ttft_ms", "P90 TTFT (ms)"),
-    ("p99_ttft_ms", "P99 TTFT (ms)"),
 ]
 
 
@@ -140,61 +136,6 @@ def main():
         plt.close(fig)
         print(f"  Saved: {fname}")
 
-    # --- Combined 2x2 overview plot ---
-    overview_metrics = [
-        ("request_throughput_req_s", "Request Throughput (req/s)"),
-        ("prefill_throughput_tok_s", "Prefill Throughput (tok/s)"),
-        ("mean_ttft_ms", "Mean TTFT (ms)"),
-        ("p99_ttft_ms", "P99 TTFT (ms)"),
-    ]
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    for ax, (key, ylabel) in zip(axes.flat, overview_metrics):
-        plot_metric(ax, results, settings, ccs, key, ylabel)
-        ax.set_title(ylabel)
-
-    fig.suptitle(f"Benchmark Results Overview", fontsize=14, fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    overview_path = os.path.join(plot_dir, "overview.png")
-    fig.savefig(overview_path, dpi=150)
-    plt.close(fig)
-    print(f"  Saved: {overview_path}")
-
-    # --- Speedup plot ---
-    fig, ax = plt.subplots(figsize=(8, 5))
-    x = np.arange(len(ccs))
-    for s in settings:
-        speedups = []
-        valid_x = []
-        for i, cc in enumerate(ccs):
-            d = results[s].get(cc)
-            v = results["vanilla_sglang"].get(cc)
-            if d and v and v.get("request_throughput_req_s", 0) > 0:
-                ratio = d["request_throughput_req_s"] / v["request_throughput_req_s"]
-                speedups.append(ratio)
-                valid_x.append(x[i])
-        if speedups:
-            ax.plot(
-                valid_x, speedups,
-                marker=SETTING_MARKERS.get(s, "o"),
-                color=SETTING_COLORS.get(s, None),
-                label=SETTING_LABELS.get(s, s),
-                linewidth=2,
-                markersize=7,
-            )
-    ax.axhline(y=1.0, color="gray", linestyle="--", alpha=0.5)
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(c) for c in ccs])
-    ax.set_xlabel("Concurrency")
-    ax.set_ylabel("Speedup vs Vanilla SGLang")
-    ax.set_title("Request Throughput Speedup")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    speedup_path = os.path.join(plot_dir, "speedup.png")
-    fig.savefig(speedup_path, dpi=150)
-    plt.close(fig)
-    print(f"  Saved: {speedup_path}")
 
     print(f"\nAll plots saved to: {plot_dir}/")
 

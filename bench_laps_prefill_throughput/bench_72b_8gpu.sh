@@ -117,21 +117,56 @@ launch_servers() {
     sleep 3
 }
 
+check_server_alive() {
+    curl -s --max-time 5 "http://${HOST}:${PREFILL_PORT}/health" > /dev/null 2>&1 && \
+    curl -s --max-time 5 "http://${HOST}:${DECODE_PORT}/health" > /dev/null 2>&1
+}
+
+MAX_RETRIES=3
+
 run_concurrency_sweep() {
     local label=$1
+    local prefill_extra_args=$2
 
     for cc in $CONCURRENCY_LEVELS; do
-        echo ""
-        echo "  --- ${label} | cc=${cc} ---"
-        $PYTHON "${SCRIPT_DIR}/bench_prefill_only.py" \
-            --dataset "$DATASET" \
-            --url "http://${HOST}:${ROUTER_PORT}" \
-            --num-prompts $NUM_PROMPTS \
-            --max-new-tokens $MAX_NEW_TOKENS \
-            --concurrency $cc \
-            --output "${RAW_DIR}/${label}_cc${cc}.json" \
-            2>&1 | tee "${RAW_DIR}/${label}_cc${cc}.txt"
-        sleep 2
+        local attempt=0
+        local success=false
+
+        while [ $attempt -lt $MAX_RETRIES ] && [ "$success" = "false" ]; do
+            # Check if servers are alive before running
+            if ! check_server_alive; then
+                echo ""
+                echo "  [CRASH DETECTED] Server down before ${label} cc=${cc} (attempt $((attempt+1))/${MAX_RETRIES})"
+                echo "  [RESTART] Relaunching servers for ${label}..."
+                launch_servers "$label" "$prefill_extra_args"
+            fi
+
+            echo ""
+            echo "  --- ${label} | cc=${cc} (attempt $((attempt+1))) ---"
+            $PYTHON "${SCRIPT_DIR}/bench_prefill_only.py" \
+                --dataset "$DATASET" \
+                --url "http://${HOST}:${ROUTER_PORT}" \
+                --num-prompts $NUM_PROMPTS \
+                --max-new-tokens $MAX_NEW_TOKENS \
+                --concurrency $cc \
+                --output "${RAW_DIR}/${label}_cc${cc}.json" \
+                2>&1 | tee "${RAW_DIR}/${label}_cc${cc}.txt"
+
+            # Check if benchmark produced a valid result (JSON file exists and has data)
+            if [ -f "${RAW_DIR}/${label}_cc${cc}.json" ] && check_server_alive; then
+                success=true
+            else
+                echo "  [WARN] Benchmark may have failed for ${label} cc=${cc}"
+                attempt=$((attempt + 1))
+                # Remove partial result
+                rm -f "${RAW_DIR}/${label}_cc${cc}.json"
+            fi
+            sleep 2
+        done
+
+        if [ "$success" = "false" ]; then
+            echo "  [FAIL] ${label} cc=${cc} failed after ${MAX_RETRIES} retries, skipping."
+        fi
     done
 }
 
@@ -142,13 +177,13 @@ trap cleanup EXIT
 LAPS_ARGS="--enable-laps-scheduler --laps-length-threshold 256"
 
 launch_servers "vanilla_sglang" ""
-run_concurrency_sweep "vanilla_sglang"
+run_concurrency_sweep "vanilla_sglang" ""
 
 launch_servers "disaggregation" "$LAPS_ARGS"
-run_concurrency_sweep "disaggregation"
+run_concurrency_sweep "disaggregation" "$LAPS_ARGS"
 
-launch_servers "laps" "--enable-laps"
-run_concurrency_sweep "laps"
+launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
+run_concurrency_sweep "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
 
 # ───────────────────────── generate summary ─────────────────────────
 
@@ -211,17 +246,6 @@ for s in settings:
         row += f'  {d[\"mean_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
     lines.append(row)
 
-lines.append('')
-lines.append('--- P99 TTFT Latency (ms) ---')
-lines.append(hdr)
-lines.append('-' * len(hdr))
-for s in settings:
-    row = f'{s:<20s}'
-    for cc in ccs:
-        d = load(s, cc)
-        row += f'  {d[\"p99_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
-    lines.append(row)
-
 # Speedup vs vanilla
 lines.append('')
 lines.append('--- Speedup vs vanilla_sglang (RPS) ---')
@@ -248,7 +272,7 @@ print(text)
 
 with open(os.path.join('${RESULTS_DIR}', 'summary.txt'), 'w') as f:
     f.write(text)
-" 2>&1 | tee "${RESULTS_DIR}/summary.txt"
+"
 
 # ───────────────────────── generate plots ─────────────────────────
 

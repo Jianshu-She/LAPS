@@ -147,7 +147,7 @@ run_concurrency_sweep "vanilla_sglang"
 launch_servers "disaggregation" "$LAPS_ARGS"
 run_concurrency_sweep "disaggregation"
 
-launch_servers "laps" "--enable-laps"
+launch_servers "laps" "--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph $LAPS_ARGS"
 run_concurrency_sweep "laps"
 
 # ───────────────────────── generate summary ─────────────────────────
@@ -211,17 +211,6 @@ for s in settings:
         row += f'  {d[\"mean_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
     lines.append(row)
 
-lines.append('')
-lines.append('--- P99 TTFT Latency (ms) ---')
-lines.append(hdr)
-lines.append('-' * len(hdr))
-for s in settings:
-    row = f'{s:<20s}'
-    for cc in ccs:
-        d = load(s, cc)
-        row += f'  {d[\"p99_ttft_ms\"]:>8.1f}' if d else f'  {\"N/A\":>8s}'
-    lines.append(row)
-
 # Speedup vs vanilla
 lines.append('')
 lines.append('--- Speedup vs vanilla_sglang (RPS) ---')
@@ -248,7 +237,7 @@ print(text)
 
 with open(os.path.join('${RESULTS_DIR}', 'summary.txt'), 'w') as f:
     f.write(text)
-" 2>&1 | tee "${RESULTS_DIR}/summary.txt"
+"
 
 # ───────────────────────── generate plots ─────────────────────────
 

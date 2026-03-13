@@ -4,6 +4,10 @@
 
 **Authors:** Jianshu She, Zonghang Li, Hongchao Du, Shangyu Wu, Wenhao Zheng, Eric Xing, Zhengzhong Liu, Huaxiu Yao, Jason Xue, Qirong Ho
 
+## MLSys Artifact Evaluation
+
+For MLSys artifact evaluation, please go directly to [bench_laps_prefill_throughput/](bench_laps_prefill_throughput/).
+
 ## Overview
 
 In prefill-decode (PD) disaggregated LLM serving, prefill workers process prompts of widely varying lengths. When short and long prefills share a batch, GPU utilization suffers: short sequences finish early and waste compute while long sequences dominate latency, creating head-of-line blocking that degrades both throughput and time-to-first-token (TTFT).
@@ -11,10 +15,6 @@ In prefill-decode (PD) disaggregated LLM serving, prefill workers process prompt
 LAPS introduces a three-level scheduling framework that addresses this interference. **Dual-Queue Scheduling** separates short and long prefills into distinct queues so each batch contains similarly-sized sequences. **Waiting Window** adds a configurable delay to accumulate enough same-length requests for high-utilization batches. **Dynamic Allocation** adjusts the prefill-decode GPU split at runtime based on queue pressure, preventing either pipeline stage from becoming a bottleneck.
 
 ![Architecture](Method.png)
-
-## MLSys Artifact Evaluation
-
-For MLSys artifact evaluation, please go directly to [bench_laps_prefill_throughput/](bench_laps_prefill_throughput/).
 
 ## Features
 
