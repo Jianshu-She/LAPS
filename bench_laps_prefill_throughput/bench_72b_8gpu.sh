@@ -13,13 +13,13 @@ PREFILL_PORT=30300
 DECODE_PORT=30301
 ROUTER_PORT=30302
 HOST="127.0.0.1"
-IB_DEVICE="mlx5_0"
-BACKEND="mooncake"
+IB_DEVICE="${IB_DEVICE:-mlx5_0}"
+BACKEND="${BACKEND:-mooncake}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="${SCRIPT_DIR}/results_72b_8gpu_${TIMESTAMP}"
 RAW_DIR="${RESULTS_DIR}/raw"
-PYTHON="/mnt/weka/home/jianshu.she/miniconda3/envs/laps/bin/python"
+PYTHON="${PYTHON:-$(which python3)}"
 
 NUM_PROMPTS=10000
 MAX_NEW_TOKENS=1

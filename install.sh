@@ -71,11 +71,33 @@ import transformers;  print(f'  transformers:    {transformers.__version__}')
 
 echo ""
 echo "============================================================"
+echo "  Environment Info"
+echo "============================================================"
+if nvidia-smi &>/dev/null; then
+    echo "  GPU:          $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
+    echo "  GPU count:    $(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
+    echo "  Driver:       $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
+    echo "  CUDA (driver):$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)"
+fi
+"${PYTHON}" -c "import torch; print(f'  CUDA (torch):  {torch.version.cuda}')" 2>/dev/null || true
+
+# Check for InfiniBand
+if command -v ibstat &>/dev/null && ibstat &>/dev/null; then
+    echo "  InfiniBand:   available"
+else
+    echo "  InfiniBand:   not detected (use TCP fallback, see bench_laps_prefill_throughput/README.md)"
+fi
+
+echo ""
+echo "============================================================"
 echo "  Installation complete!"
 echo ""
 echo "  To activate:  conda activate ${ENV_NAME}"
 echo "  Python path:  ${PYTHON}"
 echo ""
 echo "  To run benchmarks:"
-echo "    bash bench_laps_prefill_throughput/bench_32b_concurrency.sh"
+echo "    bash bench_laps_prefill_throughput/run_all_benchmarks.sh"
+echo ""
+echo "  For alternative hardware setup, see:"
+echo "    bench_laps_prefill_throughput/README.md#6-running-on-alternative-hardware"
 echo "============================================================"

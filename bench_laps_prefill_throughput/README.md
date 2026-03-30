@@ -15,8 +15,21 @@ This creates a conda environment with SGLang (LAPS fork), mooncake-transfer-engi
 
 **Prerequisites:**
 - conda (miniconda or anaconda)
-- NVIDIA GPUs with CUDA drivers
-- InfiniBand device (for mooncake KV transfer)
+- NVIDIA GPUs with CUDA drivers (NVIDIA Driver >= 550)
+- CUDA Toolkit >= 12.4 (recommended: 12.6)
+- InfiniBand device (for mooncake RDMA transfer; TCP fallback available, see [Alternative Hardware](#6-running-on-alternative-hardware))
+
+**Software dependencies** (automatically installed by `install.sh`):
+| Package | Version | Notes |
+|---|---|---|
+| Python | 3.12 | via conda |
+| PyTorch | 2.9.1 | with CUDA support |
+| sgl-kernel | 0.3.21 | SGLang CUDA kernels |
+| flashinfer | 0.6.3 | FlashInfer attention backend |
+| transformers | 4.57.1 | HuggingFace Transformers |
+| mooncake-transfer-engine | latest | KV cache transfer (RDMA/TCP) |
+| sglang-router | latest | Request routing |
+| cuda-python | 12.9 | CUDA Python bindings |
 
 ## 2. Dataset
 
@@ -123,3 +136,65 @@ All experiments use 10,000 LMSYS-Chat prompts with `max_new_tokens=1` (prefill-o
 | laps | 13.9 | 49.0 | 73.7 | 128.0 | 202.3 | 275.8 | 366.0 |
 
 ![Request Throughput — 72B TP=4](expected_results/request_throughput_72b_tp4.png)
+
+## 6. Running on Alternative Hardware
+
+The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**. LAPS itself has **no hard dependency on H200 or FP8** — it works on any CUDA-capable GPU (Ampere, Ada, Hopper, Blackwell, etc.).
+
+### GPU Requirements
+
+| Model | Minimum GPUs | Minimum VRAM per GPU |
+|---|---|---|
+| Qwen2.5-7B (TP=1) | 2 | ~20 GB |
+| Qwen2.5-14B (TP=4) | 8 | ~20 GB |
+| Qwen2.5-32B (TP=4) | 8 | ~40 GB |
+| Qwen2.5-72B (TP=4) | 8 | ~80 GB |
+
+**Recommended starting point**: `bench_7b_2gpu.sh` requires only 2 GPUs and runs fastest.
+
+### Running on A100 / Non-Hopper GPUs
+
+LAPS scheduling features (`--enable-laps-scheduler`, `--enable-piecewise-cuda-graph`, `--enable-batch-prefill-cuda-graph`) do not use FP8 and work on A100s. If you encounter `cuda_fp8` errors, they come from SGLang's general quantization layer, not LAPS. To resolve:
+
+1. Ensure your CUDA Toolkit version matches PyTorch's CUDA version (both should be 12.x).
+2. Install the exact dependency versions via `bash install.sh` rather than mixing with a pre-existing SGLang installation.
+3. If errors persist, try a clean conda environment:
+   ```bash
+   conda deactivate
+   ENV_NAME=laps_clean bash install.sh
+   conda activate laps_clean
+   ```
+
+### Running without InfiniBand
+
+The disaggregation transfer backend defaults to Mooncake with RDMA. If your system does not have InfiniBand, you can switch to TCP:
+
+```bash
+# Option 1: Set environment variable before running benchmarks
+export BACKEND=mooncake
+export MOONCAKE_PROTOCOL=tcp
+
+# Option 2: Override IB_DEVICE (not needed for TCP, but avoids errors)
+export IB_DEVICE=""
+```
+
+### Customizing Benchmark Scripts
+
+All benchmark scripts support environment variable overrides:
+
+```bash
+# Use a custom Python interpreter
+PYTHON=/path/to/your/python bash bench_7b_2gpu.sh
+
+# Use a different InfiniBand device
+IB_DEVICE=mlx5_1 bash bench_32b_8gpu.sh
+
+# Use TCP instead of RDMA
+BACKEND=mooncake MOONCAKE_PROTOCOL=tcp bash bench_7b_2gpu.sh
+```
+
+### Performance Notes on Alternative Hardware
+
+- Absolute throughput numbers will differ from the expected results (which use H200 GPUs).
+- The **relative speedup** of LAPS over vanilla SGLang and disaggregation-only baselines should be consistent across GPU types.
+- Lower memory GPUs may require reducing `--mem-fraction-static` (default: 0.85).
