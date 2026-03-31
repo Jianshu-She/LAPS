@@ -1,200 +1,140 @@
-# LAPS Artifact Evaluation
+# LAPS Artifact Evaluation (A100 Branch)
 
-This directory contains everything needed to reproduce the LAPS benchmark results.
+This branch provides **one-click** artifact evaluation on **2x NVIDIA A100 GPUs** (40GB or 80GB).
+
+It includes fixes to enable LAPS Batch Prefill CUDA Graph on A100 GPUs via the FlashInfer attention backend (the main branch only supports Flash Attention 3 on Hopper GPUs).
+
+## Quick Start
+
+```bash
+# 1. Install (handles all A100-specific dependencies automatically)
+bash install.sh
+conda activate laps
+
+# 2. Run all benchmarks (~75 min total)
+bash bench_laps_prefill_throughput/run_a100_all.sh
+
+# Or run a single model (~10 min)
+bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 0.5b
+```
 
 ## 1. Installation
-
-From the **repo root**, run the install script to set up the environment:
 
 ```bash
 bash install.sh
 conda activate laps
 ```
 
-This creates a conda environment with SGLang (LAPS fork), mooncake-transfer-engine, and sglang-router.
+The install script automatically handles all A100-specific dependencies:
 
-**Prerequisites:**
-- conda (miniconda or anaconda)
-- NVIDIA GPUs with CUDA drivers (NVIDIA Driver >= 550)
-- CUDA Toolkit >= 12.4 (recommended: 12.6)
-- InfiniBand device (for mooncake RDMA transfer; TCP fallback available, see [Alternative Hardware](#6-running-on-alternative-hardware))
+| Step | What it does | Why |
+|------|-------------|-----|
+| System libs | Installs `libibverbs`, `librdmacm` | Required by mooncake at import time, even with nixl backend |
+| CUDA Toolkit | Installs `nvcc` via conda if missing | FlashInfer JIT-compiles CUDA kernels at runtime |
+| lib64 symlinks | Links `libcudart.so` to `lib64/` | FlashInfer's ninja build searches `$CONDA_PREFIX/lib64/` |
+| nixl | `pip install nixl` | KV cache transfer backend (replaces mooncake RDMA on non-IB systems) |
+| flashinfer cache | Clears `~/.cache/flashinfer` | Forces recompilation with correct CUDA paths |
 
-**Software dependencies** (automatically installed by `install.sh`):
-| Package | Version | Notes |
-|---|---|---|
-| Python | 3.12 | via conda |
-| PyTorch | 2.9.1 | with CUDA support |
-| sgl-kernel | 0.3.21 | SGLang CUDA kernels |
-| flashinfer | 0.6.3 | FlashInfer attention backend |
-| transformers | 4.57.1 | HuggingFace Transformers |
-| mooncake-transfer-engine | latest | KV cache transfer (RDMA/TCP) |
-| sglang-router | latest | Request routing |
-| cuda-python | 12.9 | CUDA Python bindings |
+**Troubleshooting**: If `install.sh` fails on system libraries (requires sudo), install them manually:
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y libibverbs1 libibverbs-dev librdmacm1 librdmacm-dev
+
+# RHEL/CentOS
+sudo yum install -y libibverbs libibverbs-devel librdmacm librdmacm-devel
+```
 
 ## 2. Dataset
 
-The benchmarks use LMSYS-Chat-1M prompts. The dataset file is at `data/lmsys_chat_10k.jsonl` (relative to repo root). The scripts locate it automatically.
+The benchmarks use LMSYS-Chat-1M prompts at `data/lmsys_chat_10k.jsonl` (included in the repo). Scripts locate it automatically.
 
 ## 3. Run Benchmarks
 
-Each benchmark launches a PD disaggregation cluster (prefill server + decode server + router), runs 3 settings (Vanilla SGLang, Disaggregation, LAPS) across 7 concurrency levels, and generates a `summary.txt` with throughput/latency tables.
-
-### Quick Evaluation (One Command)
-
-Run all 4 model sizes sequentially:
+### Run All Models (Recommended)
 
 ```bash
-bash run_all_benchmarks.sh
+bash bench_laps_prefill_throughput/run_a100_all.sh
 ```
 
-This runs: 7B (2 GPU) → 14B (8 GPU) → 32B (8 GPU) → 72B (8 GPU).
-
-You can also select specific models:
-
-```bash
-bash run_all_benchmarks.sh 7b          # only 7B
-bash run_all_benchmarks.sh 14b 32b     # only 14B and 32B
-```
+This runs 0.5B -> 3B -> 7B sequentially. Estimated total time: ~75 minutes.
 
 ### Run Individual Models
 
-| Script | Model | GPUs Required | TP Size |
-|---|---|---|---|
-| `bench_7b_2gpu.sh` | Qwen2.5-7B | 2 | 1 |
-| `bench_14b_8gpu.sh` | Qwen2.5-14B | 8 | 4 |
-| `bench_32b_8gpu.sh` | Qwen2.5-32B-Instruct | 8 | 4 |
-| `bench_72b_8gpu.sh` | Qwen2.5-72B-Instruct | 8 | 4 |
+```bash
+bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 0.5b   # ~10 min
+bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 3b     # ~25 min
+bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 7b     # ~40 min
+```
 
-Example:
+### Customize
 
 ```bash
-bash bench_7b_2gpu.sh     # ~2 GPUs, fastest to run
-bash bench_72b_8gpu.sh    # ~8 GPUs, largest model
+# Fewer prompts for a quick sanity check
+NUM_PROMPTS=100 bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 0.5b
+
+# Use mooncake backend (if you have InfiniBand)
+BACKEND=mooncake bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 7b
 ```
+
+### What Each Setting Means
+
+Each model is benchmarked under 3 settings:
+
+| Setting | CLI Flags | Description |
+|---------|-----------|-------------|
+| **Vanilla SGLang** | (none) | Baseline: disaggregated PD serving without LAPS |
+| **Dual-Queue** | `--enable-laps-scheduler` | LAPS Feature 2: length-aware dual-queue scheduling |
+| **LAPS** | `--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph` | LAPS Feature 1: batch prefill CUDA graph (main speedup source) |
 
 ## 4. Results
 
 Each run creates a timestamped results directory:
 
 ```
-results_7b_2gpu_20260312_143022/
-├── summary.txt          # <-- Start here: throughput, latency, speedup tables
-└── raw/                 # Per-setting, per-concurrency JSON/TXT + server logs
+results_7b_2gpu_a100_20260330_143022/
+├── summary.txt          # Start here: req/s, TTFT tables, speedup
+├── plots/               # PNG charts for each metric
+│   ├── request_throughput_req_s.png
+│   ├── mean_ttft_ms.png
+│   └── p90_ttft_ms.png
+└── raw/                 # Per-setting, per-concurrency JSON + logs
     ├── vanilla_sglang_cc1.json
-    ├── vanilla_sglang_cc1.txt
     ├── laps_cc64.json
-    ├── ...
-    └── laps_prefill.log
+    └── ...
 ```
 
-The `summary.txt` contains:
-- Request throughput (req/s) across all concurrency levels
-- Prefill throughput (tok/s)
-- Mean TTFT latency (ms)
-- Speedup vs Vanilla SGLang
+### Metrics
 
-## 5. Expected Results
+| Metric | Description |
+|--------|-------------|
+| `request_throughput_req_s` | Requests completed per second (higher is better) |
+| `mean_ttft_ms` | Mean time-to-first-token in milliseconds (lower is better) |
+| `p90_ttft_ms` | 90th percentile TTFT (lower is better) |
 
-All experiments use 10,000 LMSYS-Chat prompts with `max_new_tokens=1` (prefill-only throughput), sweeping concurrency from 1 to 64. Hardware: NVIDIA H200 GPUs with InfiniBand (mooncake RDMA backend).
+## 5. GPU Requirements
 
-### Qwen2.5-7B (TP=1, 2 GPUs)
+| Model | Min VRAM per GPU | Notes |
+|-------|-----------------|-------|
+| Qwen2.5-0.5B | ~5 GB | Fastest, good for verifying setup |
+| Qwen2.5-3B | ~10 GB | Medium |
+| Qwen2.5-7B | ~20 GB | Matches paper's 2-GPU config |
 
-| Setting | cc=1 | cc=2 | cc=4 | cc=8 | cc=16 | cc=32 | cc=64 |
-|---|---|---|---|---|---|---|---|
-| vanilla_sglang | 49.3 | 74.8 | 125.1 | 206.2 | 311.0 | 431.1 | 532.5 |
-| disaggregation | 19.7 | 74.7 | 115.5 | 153.3 | 236.2 | 400.8 | 544.2 |
-| laps | 21.2 | 102.7 | 176.1 | 308.7 | 459.6 | 620.8 | 696.2 |
+All models use TP=1 with 1 GPU for prefill and 1 GPU for decode.
 
-![Request Throughput — 7B TP=1](expected_results/request_throughput_7b_tp1.png)
+## 6. A100-Specific Notes
 
-### Qwen2.5-14B (TP=4, 8 GPUs)
+### Why nixl instead of mooncake?
 
-| Setting | cc=1 | cc=2 | cc=4 | cc=8 | cc=16 | cc=32 | cc=64 |
-|---|---|---|---|---|---|---|---|
-| vanilla_sglang | 25.9 | 38.4 | 61.2 | 81.0 | 158.2 | 242.9 | 331.5 |
-| disaggregation | 14.8 | 37.4 | 43.9 | 60.8 | 91.6 | 170.3 | 305.9 |
-| laps | 19.2 | 76.3 | 105.2 | 225.2 | 331.0 | 410.4 | 427.9 |
+The default KV cache transfer backend is `mooncake` with RDMA, which requires InfiniBand. On systems without InfiniBand, mooncake falls back to TCP, but this causes **ephemeral port exhaustion** under high throughput (~300 requests exhaust the ~28K port range). The `nixl` backend uses UCX with shared memory/CUDA IPC and avoids this issue entirely.
 
-![Request Throughput — 14B TP=4](expected_results/request_throughput_14b_tp4.png)
+### FlashInfer Backend Support
 
-### Qwen2.5-32B-Instruct (TP=4, 8 GPUs)
+The main branch only supports Batch Prefill CUDA Graph with the Flash Attention 3 backend (Hopper GPUs). This branch adds support for the **FlashInfer backend** (used by default on Ampere/A100 GPUs) by implementing the missing interface methods:
 
-| Setting | cc=1 | cc=2 | cc=4 | cc=8 | cc=16 | cc=32 | cc=64 |
-|---|---|---|---|---|---|---|---|
-| vanilla_sglang | 20.0 | 31.9 | 51.9 | 77.4 | 122.9 | 192.2 | 296.1 |
-| disaggregation | 12.7 | 32.1 | 36.3 | 47.7 | 73.4 | 120.5 | 251.8 |
-| laps | 17.2 | 61.0 | 83.1 | 185.2 | 276.0 | 349.2 | 409.2 |
+- `FlashInferAttnBackend.init_batch_prefill_cuda_graph_state()`
+- Correct parameter passing for `init_forward_metadata_capture/replay_batch_prefill_cuda_graph()`
+- Proper buffer pre-allocation with `max_context_len` to avoid flashinfer's `_max_total_num_rows` overflow
 
-![Request Throughput — 32B TP=4](expected_results/request_throughput_32b_tp4.png)
+### Server Startup Order
 
-### Qwen2.5-72B-Instruct (TP=4, 8 GPUs)
-
-| Setting | cc=1 | cc=2 | cc=4 | cc=8 | cc=16 | cc=32 | cc=64 |
-|---|---|---|---|---|---|---|---|
-| vanilla_sglang | 15.5 | 26.0 | 43.9 | 69.6 | 104.7 | 171.8 | 255.9 |
-| disaggregation | 10.8 | 24.4 | 28.1 | 40.1 | 65.2 | 113.1 | 231.5 |
-| laps | 13.9 | 49.0 | 73.7 | 128.0 | 202.3 | 275.8 | 366.0 |
-
-![Request Throughput — 72B TP=4](expected_results/request_throughput_72b_tp4.png)
-
-## 6. Running on Alternative Hardware
-
-The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**. LAPS itself has **no hard dependency on H200 or FP8** — it works on any CUDA-capable GPU (Ampere, Ada, Hopper, Blackwell, etc.).
-
-### GPU Requirements
-
-| Model | Minimum GPUs | Minimum VRAM per GPU |
-|---|---|---|
-| Qwen2.5-7B (TP=1) | 2 | ~20 GB |
-| Qwen2.5-14B (TP=4) | 8 | ~20 GB |
-| Qwen2.5-32B (TP=4) | 8 | ~40 GB |
-| Qwen2.5-72B (TP=4) | 8 | ~80 GB |
-
-**Recommended starting point**: `bench_7b_2gpu.sh` requires only 2 GPUs and runs fastest.
-
-### Running on A100 / Non-Hopper GPUs
-
-LAPS scheduling features (`--enable-laps-scheduler`, `--enable-piecewise-cuda-graph`, `--enable-batch-prefill-cuda-graph`) do not use FP8 and work on A100s. If you encounter `cuda_fp8` errors, they come from SGLang's general quantization layer, not LAPS. To resolve:
-
-1. Ensure your CUDA Toolkit version matches PyTorch's CUDA version (both should be 12.x).
-2. Install the exact dependency versions via `bash install.sh` rather than mixing with a pre-existing SGLang installation.
-3. If errors persist, try a clean conda environment:
-   ```bash
-   conda deactivate
-   ENV_NAME=laps_clean bash install.sh
-   conda activate laps_clean
-   ```
-
-### Running without InfiniBand
-
-The disaggregation transfer backend defaults to Mooncake with RDMA. If your system does not have InfiniBand, you can switch to TCP:
-
-```bash
-# Option 1: Set environment variable before running benchmarks
-export BACKEND=mooncake
-export MOONCAKE_PROTOCOL=tcp
-
-# Option 2: Override IB_DEVICE (not needed for TCP, but avoids errors)
-export IB_DEVICE=""
-```
-
-### Customizing Benchmark Scripts
-
-All benchmark scripts support environment variable overrides:
-
-```bash
-# Use a custom Python interpreter
-PYTHON=/path/to/your/python bash bench_7b_2gpu.sh
-
-# Use a different InfiniBand device
-IB_DEVICE=mlx5_1 bash bench_32b_8gpu.sh
-
-# Use TCP instead of RDMA
-BACKEND=mooncake MOONCAKE_PROTOCOL=tcp bash bench_7b_2gpu.sh
-```
-
-### Performance Notes on Alternative Hardware
-
-- Absolute throughput numbers will differ from the expected results (which use H200 GPUs).
-- The **relative speedup** of LAPS over vanilla SGLang and disaggregation-only baselines should be consistent across GPU types.
-- Lower memory GPUs may require reducing `--mem-fraction-static` (default: 0.85).
+The benchmark script starts the **decode server first**, waits for it to be healthy, then starts the **prefill server**. This is required because nixl's bootstrap mechanism needs the decode instance to be ready before the prefill instance can register.

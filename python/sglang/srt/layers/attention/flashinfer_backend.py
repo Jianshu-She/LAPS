@@ -748,6 +748,18 @@ class FlashInferAttnBackend(AttentionBackend):
     def supports_batch_prefill_cuda_graph(self) -> bool:
         return True
 
+    def init_batch_prefill_cuda_graph_state(self, max_bs: int, max_seq_len: int):
+        """Pre-allocate per-(bs, seq_len) wrapper sets for batch prefill CUDA graph.
+
+        Each captured (bs, seq_len) combination needs its own set of wrappers because
+        flashinfer's CUDA graph mode fixes the batch_size at creation time. We also
+        need to ensure the first begin_forward call uses the maximum possible
+        total_num_rows so that subsequent replays never exceed it.
+        """
+        self._batch_prefill_max_bs = max_bs
+        self._batch_prefill_max_seq_len = max_seq_len
+        self.batch_prefill_cuda_graph_metadata = {}
+
     def init_forward_metadata_capture_batch_prefill_cuda_graph(
         self,
         bs: int,
@@ -763,6 +775,10 @@ class FlashInferAttnBackend(AttentionBackend):
 
         This method prepares the attention backend for capturing a CUDA graph
         with multiple sequences in a batch, each with uniform padded length.
+
+        Key: we use the maximum possible seq_lens (context_len) for the first
+        begin_forward call so that flashinfer's _max_total_num_rows is set high
+        enough for any future replay.
         """
         num_tokens = bs * seq_len
         prefill_wrappers = []
@@ -781,12 +797,19 @@ class FlashInferAttnBackend(AttentionBackend):
                 )
             )
 
-        seq_lens_sum = seq_lens.sum().item()
+        # Use max possible seq_lens for the first begin_forward to set
+        # flashinfer's _max_total_num_rows high enough for any replay.
+        # During replay, actual seq_lens (KV cache lengths) can be up to
+        # context_len, so we use that as the upper bound.
+        max_possible_seq_len = self.max_context_len
+        capture_seq_lens = torch.full_like(seq_lens, max_possible_seq_len)
+        capture_seq_lens_sum = int(capture_seq_lens.sum().item())
+
         self.indices_updater_prefill.update(
             req_pool_indices,
-            seq_lens,
-            seq_lens.cpu(),
-            seq_lens_sum,
+            capture_seq_lens,
+            capture_seq_lens.cpu(),
+            capture_seq_lens_sum,
             prefix_lens=extend_prefix_lens,
             prefill_wrappers=prefill_wrappers,
             use_ragged=False,
@@ -795,9 +818,7 @@ class FlashInferAttnBackend(AttentionBackend):
         )
 
         # Store for batch prefill
-        self.batch_prefill_cuda_graph_metadata = {
-            (bs, seq_len): prefill_wrappers
-        }
+        self.batch_prefill_cuda_graph_metadata[(bs, seq_len)] = prefill_wrappers
         self.forward_metadata = PrefillMetadata(prefill_wrappers, False, False)
 
     def init_forward_metadata_replay_batch_prefill_cuda_graph(
@@ -818,22 +839,6 @@ class FlashInferAttnBackend(AttentionBackend):
         batch prefill CUDA graph with updated input data.
         """
         key = (bs, seq_len)
-        if not hasattr(self, 'batch_prefill_cuda_graph_metadata'):
-            self.batch_prefill_cuda_graph_metadata = {}
-
-        if key not in self.batch_prefill_cuda_graph_metadata:
-            # If not captured, initialize the metadata
-            self.init_forward_metadata_capture_batch_prefill_cuda_graph(
-                bs=bs,
-                seq_len=seq_len,
-                req_pool_indices=req_pool_indices,
-                seq_lens=seq_lens,
-                extend_seq_lens=extend_seq_lens,
-                extend_prefix_lens=extend_prefix_lens,
-                extend_start_loc=extend_start_loc,
-            )
-            return
-
         prefill_wrappers = self.batch_prefill_cuda_graph_metadata[key]
         seq_lens_sum = seq_lens.sum().item()
 

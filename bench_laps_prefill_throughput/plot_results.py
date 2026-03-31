@@ -63,7 +63,7 @@ SETTING_MARKERS = {
 
 METRICS = [
     ("request_throughput_req_s", "Request Throughput (req/s)"),
-    ("prefill_throughput_tok_s", "Prefill Throughput (tok/s)"),
+    ("mean_ttft_ms", "Mean TTFT (ms)"),
     ("p90_ttft_ms", "P90 TTFT (ms)"),
 ]
 

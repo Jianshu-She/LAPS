@@ -21,7 +21,7 @@ RESULTS_DIR="${SCRIPT_DIR}/results_7b_2gpu_${TIMESTAMP}"
 RAW_DIR="${RESULTS_DIR}/raw"
 PYTHON="${PYTHON:-$(which python3)}"
 
-NUM_PROMPTS=10000
+NUM_PROMPTS="${NUM_PROMPTS:-10000}"
 MAX_NEW_TOKENS=1
 TP_SIZE=1
 PREFILL_GPUS="0"
@@ -82,6 +82,11 @@ launch_servers() {
         --mem-fraction-static 0.85 \
         > "${RAW_DIR}/${label}_decode.log" 2>&1 &
 
+    # Wait for decode server first — nixl bootstrap requires the decode
+    # instance to be ready before the prefill instance can register.
+    # For mooncake this is also safe (just slightly slower startup).
+    wait_ready "http://${HOST}:${DECODE_PORT}/health"  300
+
     CUDA_VISIBLE_DEVICES=$PREFILL_GPUS $PYTHON -m sglang.launch_server \
         --model-path "$MODEL" \
         --tp-size $TP_SIZE \
@@ -95,7 +100,6 @@ launch_servers() {
         > "${RAW_DIR}/${label}_prefill.log" 2>&1 &
 
     wait_ready "http://${HOST}:${PREFILL_PORT}/health" 300
-    wait_ready "http://${HOST}:${DECODE_PORT}/health"  300
 
     $PYTHON -m sglang_router.launch_router \
         --pd-disaggregation --mini-lb \

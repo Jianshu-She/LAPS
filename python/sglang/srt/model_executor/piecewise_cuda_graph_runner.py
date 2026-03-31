@@ -933,6 +933,9 @@ class PiecewiseCudaGraphRunner:
             seq_len=seq_len,
             req_pool_indices=req_pool_indices,
             seq_lens=seq_lens,
+            extend_seq_lens=forward_batch.extend_seq_lens,
+            extend_prefix_lens=forward_batch.extend_prefix_lens,
+            extend_start_loc=forward_batch.extend_start_loc,
         )
 
         # Define forward function — NO piecewise context, so attention runs
@@ -1052,6 +1055,9 @@ class PiecewiseCudaGraphRunner:
             req_pool_indices=self.bp_req_pool_indices[:target_bs],
             seq_lens=self.bp_seq_lens[:target_bs],
             seq_lens_cpu=self.bp_seq_lens[:target_bs].cpu(),
+            extend_seq_lens=self.bp_extend_seq_lens[:target_bs],
+            extend_prefix_lens=torch.zeros(target_bs, dtype=torch.int64, device=self.bp_seq_lens.device),
+            extend_start_loc=torch.arange(0, target_bs * target_seq_len, target_seq_len, dtype=torch.int64, device=self.bp_seq_lens.device),
         )
 
         # 4. Replay the monolithic graph

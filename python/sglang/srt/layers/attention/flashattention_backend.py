@@ -2227,6 +2227,7 @@ class FlashAttentionBackend(AttentionBackend):
         seq_len: int,
         req_pool_indices: torch.Tensor,
         seq_lens: torch.Tensor,
+        **kwargs,
     ):
         """Initialize forward metadata for batch prefill CUDA graph capture.
 
@@ -2282,6 +2283,7 @@ class FlashAttentionBackend(AttentionBackend):
         req_pool_indices: torch.Tensor,
         seq_lens: torch.Tensor,
         seq_lens_cpu: Optional[torch.Tensor] = None,
+        **kwargs,
     ):
         """Initialize forward metadata for batch prefill CUDA graph replay.
 
