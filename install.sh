@@ -131,6 +131,31 @@ fi
 rm -rf "${HOME}/.cache/flashinfer" 2>/dev/null || true
 echo "  Cleared flashinfer JIT cache"
 
+# Set up conda activate.d so CUDA_HOME and LD_LIBRARY_PATH are auto-set
+ACTIVATE_DIR="${CONDA_PREFIX_PATH}/etc/conda/activate.d"
+DEACTIVATE_DIR="${CONDA_PREFIX_PATH}/etc/conda/deactivate.d"
+mkdir -p "${ACTIVATE_DIR}" "${DEACTIVATE_DIR}"
+
+cat > "${ACTIVATE_DIR}/laps_env.sh" << ACTIVATE_EOF
+#!/bin/bash
+export CUDA_HOME="\${CONDA_PREFIX}"
+export LD_LIBRARY_PATH="\${CONDA_PREFIX}/lib:\${CONDA_PREFIX}/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:\${LD_LIBRARY_PATH:-}"
+export _LAPS_OLD_LD_LIBRARY_PATH="\${LD_LIBRARY_PATH:-}"
+ACTIVATE_EOF
+
+cat > "${DEACTIVATE_DIR}/laps_env.sh" << DEACTIVATE_EOF
+#!/bin/bash
+unset CUDA_HOME
+if [ -n "\${_LAPS_OLD_LD_LIBRARY_PATH:-}" ]; then
+    export LD_LIBRARY_PATH="\${_LAPS_OLD_LD_LIBRARY_PATH}"
+else
+    unset LD_LIBRARY_PATH
+fi
+unset _LAPS_OLD_LD_LIBRARY_PATH
+DEACTIVATE_EOF
+
+echo "  Configured conda activate.d for CUDA_HOME and LD_LIBRARY_PATH"
+
 # ── [6/6] Verify installation ───────────────────────────────────
 echo ""
 echo "============================================================"

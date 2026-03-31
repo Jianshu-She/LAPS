@@ -14,6 +14,18 @@
 #   BACKEND=mooncake bash bench_a100_2gpu.sh 7b     # use mooncake instead of nixl
 set -uo pipefail
 
+# ───────────────────────── auto-detect conda env ─────────────────────────
+
+# If CUDA_HOME is not set, try to detect laps conda env
+if [ -z "${CUDA_HOME:-}" ]; then
+    LAPS_PREFIX="${CONDA_PREFIX:-$(conda run -n laps printenv CONDA_PREFIX 2>/dev/null || true)}"
+    if [ -n "${LAPS_PREFIX}" ] && [ -d "${LAPS_PREFIX}" ]; then
+        export CUDA_HOME="${LAPS_PREFIX}"
+        export PATH="${LAPS_PREFIX}/bin:${PATH}"
+        export LD_LIBRARY_PATH="${LAPS_PREFIX}/lib:${LAPS_PREFIX}/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH:-}"
+    fi
+fi
+
 # ───────────────────────── model selection ─────────────────────────
 
 MODEL_SIZE="${1:-7b}"
