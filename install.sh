@@ -106,7 +106,7 @@ echo "[3/6] Installing LAPS sglang package (editable mode)..."
 # ── [4/6] Install runtime dependencies ───────────────────────────
 echo ""
 echo "[4/6] Installing mooncake-transfer-engine, sglang-router, and nixl..."
-"${PIP}" install mooncake-transfer-engine sglang-router nixl
+"${PIP}" install mooncake-transfer-engine sglang-router nixl matplotlib
 
 # ── [5/6] Fix lib64 symlinks for flashinfer JIT ─────────────────
 # flashinfer's ninja build searches -L$CONDA_PREFIX/lib64 and

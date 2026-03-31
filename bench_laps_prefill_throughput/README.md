@@ -7,11 +7,16 @@ It includes fixes to enable LAPS Batch Prefill CUDA Graph on A100 GPUs via the F
 ## Quick Start
 
 ```bash
-# 1. Install (handles all A100-specific dependencies automatically)
+# 1. Clone and checkout
+git clone https://github.com/Jianshu-She/LAPS.git
+cd LAPS
+git checkout a100-eval
+
+# 2. Install (handles all A100-specific dependencies automatically)
 bash install.sh
 conda activate laps
 
-# 2. Run all benchmarks (~75 min total)
+# 3. Run all benchmarks (~75 min total)
 bash bench_laps_prefill_throughput/run_a100_all.sh
 
 # Or run a single model (~10 min)
@@ -72,6 +77,7 @@ sudo yum install -y libibverbs libibverbs-devel librdmacm librdmacm-devel
 | mooncake-transfer-engine | latest | KV cache transfer (RDMA/TCP) |
 | sglang-router | latest | Request routing for PD disaggregation |
 | nixl | latest | KV cache transfer via UCX/shared memory (used instead of mooncake on non-IB systems) |
+| matplotlib | latest | Plotting benchmark results |
 
 **CUDA Toolkit** (installed via conda if system `nvcc` is missing):
 
