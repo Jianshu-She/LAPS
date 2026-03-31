@@ -101,18 +101,17 @@ fi
 # ── [3/6] Install sglang (LAPS fork) in editable mode ───────────
 echo ""
 echo "[3/6] Installing LAPS sglang package (editable mode)..."
-# Force-remove stale sglang if it exists without RECORD (e.g. leftover
-# editable install from a different directory). Without this, pip fails
-# with "Cannot uninstall sglang: no RECORD file".
+# Force-remove stale sglang if it exists (e.g. leftover editable install
+# from a different directory). Without this, pip fails with
+# "Cannot uninstall sglang: no RECORD file".
+# NOTE: We cannot use "pip show sglang" to detect this because a corrupted
+# .dist-info can crash pip itself. Instead, check for files directly.
 SITE_PACKAGES="${CONDA_PREFIX_PATH}/lib/python${PYTHON_VERSION}/site-packages"
-if "${PIP}" show sglang &>/dev/null; then
-    echo "  Existing sglang found, removing first..."
-    "${PIP}" uninstall sglang -y 2>/dev/null || true
-    # If pip uninstall failed (no RECORD), nuke all sglang artifacts manually
-    rm -rf "${SITE_PACKAGES}"/sglang-*.dist-info 2>/dev/null || true
-    rm -f "${SITE_PACKAGES}"/sglang.egg-link 2>/dev/null || true
-    rm -f "${SITE_PACKAGES}"/__editable__.sglang-*.pth 2>/dev/null || true
-    echo "  Cleaned up stale sglang"
+STALE_FILES=$(find "${SITE_PACKAGES}" -maxdepth 1 -name "sglang-*.dist-info" -o -name "sglang.egg-link" -o -name "__editable__.sglang-*.pth" 2>/dev/null | grep -v sglang_router || true)
+if [ -n "${STALE_FILES}" ]; then
+    echo "  Removing stale sglang artifacts..."
+    echo "${STALE_FILES}" | xargs rm -rf 2>/dev/null || true
+    echo "  Cleaned up"
 fi
 "${PIP}" install -e "${SCRIPT_DIR}/python"
 
