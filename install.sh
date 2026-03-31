@@ -105,12 +105,13 @@ echo "[3/6] Installing LAPS sglang package (editable mode)..."
 # editable install from a different directory). Without this, pip fails
 # with "Cannot uninstall sglang: no RECORD file".
 if "${PIP}" show sglang &>/dev/null; then
-    "${PIP}" install -e "${SCRIPT_DIR}/python" 2>/dev/null \
-        || { echo "  Stale sglang detected, force-reinstalling..."; \
-             "${PIP}" install --force-reinstall --no-deps -e "${SCRIPT_DIR}/python"; }
-else
-    "${PIP}" install -e "${SCRIPT_DIR}/python"
+    echo "  Existing sglang found, removing first..."
+    "${PIP}" uninstall sglang -y 2>/dev/null \
+        || { echo "  Normal uninstall failed, force-removing egg-link..."; \
+             rm -f "${CONDA_PREFIX_PATH}/lib/python${PYTHON_VERSION}/site-packages/sglang.egg-link" \
+                   "${CONDA_PREFIX_PATH}/lib/python${PYTHON_VERSION}/site-packages/__editable__.sglang-*.pth" 2>/dev/null; }
 fi
+"${PIP}" install -e "${SCRIPT_DIR}/python"
 
 # ── [4/6] Install runtime dependencies ───────────────────────────
 echo ""
