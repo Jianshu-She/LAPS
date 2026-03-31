@@ -139,6 +139,9 @@ if [ -f "${CONDA_PREFIX_PATH}/targets/x86_64-linux/lib/stubs/libcuda.so" ]; then
 else
     echo "  WARNING: targets/.../stubs/libcuda.so not found, skipping symlink"
 fi
+# Fix flashinfer_cubin: pip install order can leave it without __version__
+"${PIP}" install --force-reinstall --no-deps flashinfer_cubin==0.6.3 >/dev/null 2>&1 || true
+echo "  Fixed flashinfer_cubin"
 # Clear flashinfer JIT cache to force recompilation with correct paths
 rm -rf "${HOME}/.cache/flashinfer" 2>/dev/null || true
 echo "  Cleared flashinfer JIT cache"
