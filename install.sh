@@ -101,7 +101,16 @@ fi
 # ── [3/6] Install sglang (LAPS fork) in editable mode ───────────
 echo ""
 echo "[3/6] Installing LAPS sglang package (editable mode)..."
-"${PIP}" install -e "${SCRIPT_DIR}/python"
+# Force-remove stale sglang if it exists without RECORD (e.g. leftover
+# editable install from a different directory). Without this, pip fails
+# with "Cannot uninstall sglang: no RECORD file".
+if "${PIP}" show sglang &>/dev/null; then
+    "${PIP}" install -e "${SCRIPT_DIR}/python" 2>/dev/null \
+        || { echo "  Stale sglang detected, force-reinstalling..."; \
+             "${PIP}" install --force-reinstall --no-deps -e "${SCRIPT_DIR}/python"; }
+else
+    "${PIP}" install -e "${SCRIPT_DIR}/python"
+fi
 
 # ── [4/6] Install runtime dependencies ───────────────────────────
 echo ""
