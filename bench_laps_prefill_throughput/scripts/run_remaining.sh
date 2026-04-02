@@ -6,7 +6,7 @@
 # 72B: not started
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PYTHON:-$(which python3)}"
 
 # ── Common config ──

@@ -60,16 +60,16 @@ bash run_all_benchmarks.sh 14b 32b     # only 14B and 32B
 
 | Script | Model | GPUs Required | TP Size |
 |---|---|---|---|
-| `bench_7b_2gpu.sh` | Qwen2.5-7B | 2 | 1 |
-| `bench_14b_8gpu.sh` | Qwen2.5-14B | 8 | 4 |
-| `bench_32b_8gpu.sh` | Qwen2.5-32B-Instruct | 8 | 4 |
-| `bench_72b_8gpu.sh` | Qwen2.5-72B-Instruct | 8 | 4 |
+| `scripts/bench_7b_2gpu.sh` | Qwen2.5-7B | 2 | 1 |
+| `scripts/bench_14b_8gpu.sh` | Qwen2.5-14B | 8 | 4 |
+| `scripts/bench_32b_8gpu.sh` | Qwen2.5-32B-Instruct | 8 | 4 |
+| `scripts/bench_72b_8gpu.sh` | Qwen2.5-72B-Instruct | 8 | 4 |
 
 Example:
 
 ```bash
-bash bench_7b_2gpu.sh     # ~2 GPUs, fastest to run
-bash bench_72b_8gpu.sh    # ~8 GPUs, largest model
+bash scripts/bench_7b_2gpu.sh     # ~2 GPUs, fastest to run
+bash scripts/bench_72b_8gpu.sh    # ~8 GPUs, largest model
 ```
 
 ## 4. Results
@@ -177,10 +177,10 @@ All benchmark scripts support environment variable overrides:
 
 ```bash
 # Use a custom Python interpreter
-PYTHON=/path/to/your/python bash bench_7b_2gpu.sh
+PYTHON=/path/to/your/python bash scripts/bench_7b_2gpu.sh
 
 # Use a different InfiniBand device
-IB_DEVICE=mlx5_1 bash bench_32b_8gpu.sh
+IB_DEVICE=mlx5_1 bash scripts/bench_32b_8gpu.sh
 ```
 
 ### Performance Notes

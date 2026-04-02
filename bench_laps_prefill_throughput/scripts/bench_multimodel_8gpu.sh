@@ -9,14 +9,14 @@
 # Usage: bash bench_multimodel_8gpu.sh
 set -euo pipefail
 
-DATASET="$(cd "$(dirname "$0")/.." && pwd)/data/lmsys_chat_10k.jsonl"
+DATASET="$(cd "$(dirname "$0")/../.." && pwd)/data/lmsys_chat_10k.jsonl"
 PREFILL_PORT=30300
 DECODE_PORT=30301
 ROUTER_PORT=30302
 HOST="127.0.0.1"
 IB_DEVICE="${IB_DEVICE:-mlx5_0}"
 BACKEND="${BACKEND:-mooncake}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PYTHON:-$(which python3)}"
 
 NUM_PROMPTS=10000

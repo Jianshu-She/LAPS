@@ -21,10 +21,10 @@ else
 fi
 
 declare -A SCRIPTS=(
-    ["7b"]="bench_7b_2gpu.sh"
-    ["14b"]="bench_14b_8gpu.sh"
-    ["32b"]="bench_32b_8gpu.sh"
-    ["72b"]="bench_72b_8gpu.sh"
+    ["7b"]="scripts/bench_7b_2gpu.sh"
+    ["14b"]="scripts/bench_14b_8gpu.sh"
+    ["32b"]="scripts/bench_32b_8gpu.sh"
+    ["72b"]="scripts/bench_72b_8gpu.sh"
 )
 
 declare -A GPUS=(
