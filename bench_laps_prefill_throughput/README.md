@@ -139,9 +139,30 @@ All experiments use 10,000 LMSYS-Chat prompts with `max_new_tokens=1` (prefill-o
 
 ## 6. Running on Alternative Hardware
 
-The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**. LAPS itself has **no hard dependency on H200 or FP8** — it works on any CUDA-capable GPU (Ampere, Ada, Hopper, Blackwell, etc.).
+The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**.
 
-### GPU Requirements
+### Evaluating on A100 GPUs (2x A100, no InfiniBand)
+
+If you have **2x A100 GPUs** (40GB or 80GB), switch to the **[`a100-eval` branch](https://github.com/Jianshu-She/LAPS/tree/a100-eval)** which provides one-click evaluation with all A100-specific fixes pre-applied:
+
+```bash
+git clone https://github.com/Jianshu-She/LAPS.git
+cd LAPS
+git checkout a100-eval
+bash install.sh
+conda activate laps
+bash bench_laps_prefill_throughput/run_a100_all.sh
+```
+
+The `a100-eval` branch includes:
+- **Batch Prefill CUDA Graph support for FlashInfer backend** (this branch only supports FA3/Hopper)
+- **nixl transfer backend** (replaces mooncake RDMA for systems without InfiniBand)
+- **Automatic dependency handling** (libibverbs, CUDA Toolkit, lib64 symlinks)
+- **Benchmarks for Qwen2.5-0.5B, 3B, 7B** on 2 GPUs (TP=1)
+
+See the [`a100-eval` README](https://github.com/Jianshu-She/LAPS/tree/a100-eval/bench_laps_prefill_throughput) for full documentation.
+
+### GPU Requirements (main branch, H200/H100)
 
 | Model | Minimum GPUs | Minimum VRAM per GPU |
 |---|---|---|
@@ -149,34 +170,6 @@ The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBa
 | Qwen2.5-14B (TP=4) | 8 | ~20 GB |
 | Qwen2.5-32B (TP=4) | 8 | ~40 GB |
 | Qwen2.5-72B (TP=4) | 8 | ~80 GB |
-
-**Recommended starting point**: `bench_7b_2gpu.sh` requires only 2 GPUs and runs fastest.
-
-### Running on A100 / Non-Hopper GPUs
-
-LAPS scheduling features (`--enable-laps-scheduler`, `--enable-piecewise-cuda-graph`, `--enable-batch-prefill-cuda-graph`) do not use FP8 and work on A100s. If you encounter `cuda_fp8` errors, they come from SGLang's general quantization layer, not LAPS. To resolve:
-
-1. Ensure your CUDA Toolkit version matches PyTorch's CUDA version (both should be 12.x).
-2. Install the exact dependency versions via `bash install.sh` rather than mixing with a pre-existing SGLang installation.
-3. If errors persist, try a clean conda environment:
-   ```bash
-   conda deactivate
-   ENV_NAME=laps_clean bash install.sh
-   conda activate laps_clean
-   ```
-
-### Running without InfiniBand
-
-The disaggregation transfer backend defaults to Mooncake with RDMA. If your system does not have InfiniBand, you can switch to TCP:
-
-```bash
-# Option 1: Set environment variable before running benchmarks
-export BACKEND=mooncake
-export MOONCAKE_PROTOCOL=tcp
-
-# Option 2: Override IB_DEVICE (not needed for TCP, but avoids errors)
-export IB_DEVICE=""
-```
 
 ### Customizing Benchmark Scripts
 
@@ -188,13 +181,10 @@ PYTHON=/path/to/your/python bash bench_7b_2gpu.sh
 
 # Use a different InfiniBand device
 IB_DEVICE=mlx5_1 bash bench_32b_8gpu.sh
-
-# Use TCP instead of RDMA
-BACKEND=mooncake MOONCAKE_PROTOCOL=tcp bash bench_7b_2gpu.sh
 ```
 
-### Performance Notes on Alternative Hardware
+### Performance Notes
 
-- Absolute throughput numbers will differ from the expected results (which use H200 GPUs).
+- Absolute throughput numbers will differ across GPU types.
 - The **relative speedup** of LAPS over vanilla SGLang and disaggregation-only baselines should be consistent across GPU types.
 - Lower memory GPUs may require reducing `--mem-fraction-static` (default: 0.85).
