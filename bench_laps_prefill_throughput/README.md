@@ -1,8 +1,8 @@
 # LAPS Artifact Evaluation (A100 Branch)
 
-This branch provides **one-click** artifact evaluation on **2x NVIDIA A100 GPUs** (40GB or 80GB).
+> **You are on the `a100-eval` branch.** This branch is for evaluating LAPS on **2x NVIDIA A100 GPUs** (40GB or 80GB). If you have 8x H200/H100 GPUs with InfiniBand, use the [`main` branch](https://github.com/Jianshu-She/LAPS/tree/main) instead.
 
-It includes fixes to enable LAPS Batch Prefill CUDA Graph on A100 GPUs via the FlashInfer attention backend (the main branch only supports Flash Attention 3 on Hopper GPUs).
+This branch provides **one-click** artifact evaluation with all A100-specific fixes pre-applied, including support for LAPS Batch Prefill CUDA Graph on the FlashInfer attention backend (the main branch only supports Flash Attention 3 on Hopper GPUs).
 
 ## Quick Start
 
