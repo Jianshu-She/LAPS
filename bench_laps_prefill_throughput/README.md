@@ -161,15 +161,6 @@ NUM_PROMPTS=100 bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 0.5b
 BACKEND=mooncake bash bench_laps_prefill_throughput/bench_a100_2gpu.sh 7b
 ```
 
-### What Each Setting Means
-
-Each model is benchmarked under 3 settings:
-
-| Setting | CLI Flags | Description |
-|---------|-----------|-------------|
-| **Vanilla SGLang** | (none) | Baseline: disaggregated PD serving without LAPS |
-| **Dual-Queue** | `--enable-laps-scheduler` | LAPS Feature 2: length-aware dual-queue scheduling |
-| **LAPS** | `--enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph` | LAPS Feature 1: batch prefill CUDA graph (main speedup source) |
 
 ## 5. Results
 
