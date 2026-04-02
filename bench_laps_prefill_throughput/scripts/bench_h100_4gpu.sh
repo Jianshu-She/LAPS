@@ -23,9 +23,9 @@ case "$MODEL_SIZE" in
     7b|7B)
         MODEL="Qwen/Qwen2.5-7B"
         MODEL_SHORT="7b"
-        TP_SIZE=1
-        PREFILL_GPUS="0"
-        DECODE_GPUS="1"
+        TP_SIZE=2
+        PREFILL_GPUS="0,1"
+        DECODE_GPUS="2,3"
         ;;
     14b|14B)
         MODEL="Qwen/Qwen2.5-14B"
