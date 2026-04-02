@@ -6,7 +6,15 @@
 
 ## MLSys Artifact Evaluation
 
-For MLSys artifact evaluation, please go directly to [bench_laps_prefill_throughput/](bench_laps_prefill_throughput/).
+For MLSys artifact evaluation on **8x H200/H100 with InfiniBand**, please go to [bench_laps_prefill_throughput/](bench_laps_prefill_throughput/).
+
+**Evaluating on A100 GPUs?** Switch to the [`a100-eval`](https://github.com/Jianshu-She/LAPS/tree/a100-eval) branch for one-click setup:
+
+```bash
+git checkout a100-eval
+bash install.sh && conda activate laps
+bash bench_laps_prefill_throughput/run_a100_all.sh   # runs 0.5B, 3B, 7B on 2x A100
+```
 
 ## Overview
 
