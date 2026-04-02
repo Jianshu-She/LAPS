@@ -141,6 +141,21 @@ All experiments use 10,000 LMSYS-Chat prompts with `max_new_tokens=1` (prefill-o
 
 The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**.
 
+### Evaluating on H100 GPUs (4x H100, no InfiniBand)
+
+If you have **4x H100 GPUs** without working InfiniBand/RDMA, use the dedicated H100 benchmark scripts which replace the mooncake RDMA backend with **nixl** (UCX/shared memory). This avoids the TCP ephemeral port exhaustion issue that occurs when using `MOONCAKE_PROTOCOL=tcp`.
+
+```bash
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh
+```
+
+This runs Qwen2.5-7B and Qwen2.5-14B (both TP=2, using all 4 GPUs). You can also run individual models:
+
+```bash
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 7b    # 7B only
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 14b   # 14B only
+```
+
 ### Evaluating on A100 GPUs (2x A100, no InfiniBand)
 
 If you have **2x A100 GPUs** (40GB or 80GB), switch to the **[`a100-eval` branch](https://github.com/Jianshu-She/LAPS/tree/a100-eval)** which provides one-click evaluation with all A100-specific fixes pre-applied:
