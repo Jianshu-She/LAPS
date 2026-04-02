@@ -2,6 +2,42 @@
 
 This directory contains everything needed to reproduce the LAPS benchmark results.
 
+## Running on Alternative Hardware
+
+The default benchmarks (Section 3) target **8x H200 GPUs with InfiniBand (mooncake RDMA)**. If your hardware differs, use one of the configurations below.
+
+### 4x H100 GPUs (no InfiniBand)
+
+Uses the **nixl** backend (UCX/shared memory) instead of mooncake RDMA, avoiding TCP ephemeral port exhaustion.
+
+```bash
+bash install.sh
+conda activate laps
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh
+```
+
+This runs Qwen2.5-7B and Qwen2.5-14B (both TP=2, using all 4 GPUs). You can also run individual models:
+
+```bash
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 7b    # 7B only
+bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 14b   # 14B only
+```
+
+### 2x A100 GPUs (no InfiniBand)
+
+Switch to the **[`a100-eval` branch](https://github.com/Jianshu-She/LAPS/tree/a100-eval)** which includes FlashInfer backend support for Batch Prefill CUDA Graph and the nixl transfer backend:
+
+```bash
+git checkout a100-eval
+bash install.sh
+conda activate laps
+bash bench_laps_prefill_throughput/run_a100_all.sh
+```
+
+Benchmarks Qwen2.5-0.5B, 3B, 7B on 2 GPUs (TP=1). See the [`a100-eval` README](https://github.com/Jianshu-She/LAPS/tree/a100-eval/bench_laps_prefill_throughput) for details.
+
+---
+
 ## 1. Installation
 
 From the **repo root**, run the install script to set up the environment:
@@ -17,7 +53,7 @@ This creates a conda environment with SGLang (LAPS fork), mooncake-transfer-engi
 - conda (miniconda or anaconda)
 - NVIDIA GPUs with CUDA drivers (NVIDIA Driver >= 550)
 - CUDA Toolkit >= 12.4 (recommended: 12.6)
-- InfiniBand device (for mooncake RDMA transfer; TCP fallback available, see [Alternative Hardware](#6-running-on-alternative-hardware))
+- InfiniBand device (for mooncake RDMA transfer; see [Alternative Hardware](#running-on-alternative-hardware) for H100/A100 without IB)
 
 **Software dependencies** (automatically installed by `install.sh`):
 | Package | Version | Notes |
@@ -137,69 +173,8 @@ All experiments use 10,000 LMSYS-Chat prompts with `max_new_tokens=1` (prefill-o
 
 ![Request Throughput — 72B TP=4](expected_results/request_throughput_72b_tp4.png)
 
-## 6. Running on Alternative Hardware
+## 6. Notes
 
-The expected results above were collected on **8x NVIDIA H200 GPUs with InfiniBand (RDMA)**.
-
-### Evaluating on H100 GPUs (4x H100, no InfiniBand)
-
-If you have **4x H100 GPUs** without working InfiniBand/RDMA, use the dedicated H100 benchmark scripts which replace the mooncake RDMA backend with **nixl** (UCX/shared memory). This avoids the TCP ephemeral port exhaustion issue that occurs when using `MOONCAKE_PROTOCOL=tcp`.
-
-```bash
-bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh
-```
-
-This runs Qwen2.5-7B and Qwen2.5-14B (both TP=2, using all 4 GPUs). You can also run individual models:
-
-```bash
-bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 7b    # 7B only
-bash bench_laps_prefill_throughput/run_all_h100_4gpu.sh 14b   # 14B only
-```
-
-### Evaluating on A100 GPUs (2x A100, no InfiniBand)
-
-If you have **2x A100 GPUs** (40GB or 80GB), switch to the **[`a100-eval` branch](https://github.com/Jianshu-She/LAPS/tree/a100-eval)** which provides one-click evaluation with all A100-specific fixes pre-applied:
-
-```bash
-git clone https://github.com/Jianshu-She/LAPS.git
-cd LAPS
-git checkout a100-eval
-bash install.sh
-conda activate laps
-bash bench_laps_prefill_throughput/run_a100_all.sh
-```
-
-The `a100-eval` branch includes:
-- **Batch Prefill CUDA Graph support for FlashInfer backend** (this branch only supports FA3/Hopper)
-- **nixl transfer backend** (replaces mooncake RDMA for systems without InfiniBand)
-- **Automatic dependency handling** (libibverbs, CUDA Toolkit, lib64 symlinks)
-- **Benchmarks for Qwen2.5-0.5B, 3B, 7B** on 2 GPUs (TP=1)
-
-See the [`a100-eval` README](https://github.com/Jianshu-She/LAPS/tree/a100-eval/bench_laps_prefill_throughput) for full documentation.
-
-### GPU Requirements (main branch, H200/H100)
-
-| Model | Minimum GPUs | Minimum VRAM per GPU |
-|---|---|---|
-| Qwen2.5-7B (TP=1) | 2 | ~20 GB |
-| Qwen2.5-14B (TP=4) | 8 | ~20 GB |
-| Qwen2.5-32B (TP=4) | 8 | ~40 GB |
-| Qwen2.5-72B (TP=4) | 8 | ~80 GB |
-
-### Customizing Benchmark Scripts
-
-All benchmark scripts support environment variable overrides:
-
-```bash
-# Use a custom Python interpreter
-PYTHON=/path/to/your/python bash scripts/bench_7b_2gpu.sh
-
-# Use a different InfiniBand device
-IB_DEVICE=mlx5_1 bash scripts/bench_32b_8gpu.sh
-```
-
-### Performance Notes
-
-- Absolute throughput numbers will differ across GPU types.
-- The **relative speedup** of LAPS over vanilla SGLang and disaggregation-only baselines should be consistent across GPU types.
+- Absolute throughput numbers will differ across GPU types. The **relative speedup** of LAPS over vanilla SGLang should be consistent.
 - Lower memory GPUs may require reducing `--mem-fraction-static` (default: 0.85).
+- All benchmark scripts support environment variable overrides (e.g. `PYTHON=`, `IB_DEVICE=`, `BACKEND=`, `NUM_PROMPTS=`).
