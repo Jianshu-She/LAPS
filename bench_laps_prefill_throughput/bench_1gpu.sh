@@ -1,23 +1,16 @@
 #!/bin/bash
 # Single-GPU benchmark: vanilla SGLang vs LAPS (no PD disaggregation)
-# Usage: bash bench_1gpu.sh [0.5b|3b|7b]
+#
+# Usage:
+#   bash bench_1gpu.sh            # run all 3 models (0.5b, 3b, 7b)
+#   bash bench_1gpu.sh 7b         # run only 7B
+#   bash bench_1gpu.sh 0.5b 3b    # run 0.5B and 3B
 set -uo pipefail
 
-MODEL_SIZE="${1:-7b}"
-case "$MODEL_SIZE" in
-    0.5b|0.5B) MODEL="Qwen/Qwen2.5-0.5B"; MODEL_SHORT="0.5b" ;;
-    3b|3B)     MODEL="Qwen/Qwen2.5-3B";   MODEL_SHORT="3b" ;;
-    7b|7B)     MODEL="Qwen/Qwen2.5-7B";   MODEL_SHORT="7b" ;;
-    *) echo "Usage: bash bench_1gpu.sh [0.5b|3b|7b]"; exit 1 ;;
-esac
-
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DATASET="$(cd "$(dirname "$0")/../.." && pwd)/data/lmsys_chat_10k.jsonl"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATASET="$(cd "$(dirname "$0")/.." && pwd)/data/lmsys_chat_10k.jsonl"
 PORT=30300
 HOST="127.0.0.1"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULTS_DIR="${SCRIPT_DIR}/results_${MODEL_SHORT}_1gpu_${TIMESTAMP}"
-RAW_DIR="${RESULTS_DIR}/raw"
 PYTHON="${PYTHON:-$(which python3)}"
 NUM_PROMPTS="${NUM_PROMPTS:-10000}"
 CONCURRENCY_LEVELS="${CONCURRENCY_LEVELS:-1 2 4 8 16 32 64}"
@@ -25,15 +18,13 @@ GPU="${GPU:-0}"
 
 export SGLANG_ENABLE_STRICT_MEM_CHECK_DURING_IDLE=false
 
-mkdir -p "$RAW_DIR"
+if [ $# -gt 0 ]; then
+    MODELS="$@"
+else
+    MODELS="0.5b 3b 7b"
+fi
 
-echo "============================================================"
-echo "  Single GPU Benchmark (no disaggregation)"
-echo "  Model:   ${MODEL} (${MODEL_SHORT})"
-echo "  GPU:     ${GPU}"
-echo "  Prompts: ${NUM_PROMPTS}"
-echo "  Results: ${RESULTS_DIR}"
-echo "============================================================"
+# ───────────────────────── helpers ─────────────────────────
 
 cleanup() {
     pkill -9 -f "sglang.launch_server.*--port ${PORT}" 2>/dev/null || true
@@ -71,7 +62,6 @@ run_setting() {
 
     wait_ready "http://${HOST}:${PORT}/health" 300
 
-    # warmup
     echo "[warmup]..."
     $PYTHON "${SCRIPT_DIR}/bench_prefill_only.py" \
         --dataset "$DATASET" --url "http://${HOST}:${PORT}" \
@@ -92,18 +82,15 @@ run_setting() {
     cleanup
 }
 
-trap cleanup EXIT
+generate_summary() {
+    local results_dir=$1
+    local raw_dir="${results_dir}/raw"
+    local settings="vanilla_sglang laps"
 
-# --- Run ---
-run_setting "vanilla_sglang"
-run_setting "laps" --enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph --enable-laps-scheduler --laps-length-threshold 256
-
-# --- Summary ---
-SETTINGS="vanilla_sglang laps"
-$PYTHON -c "
+    $PYTHON -c "
 import json, os
-raw = '${RAW_DIR}'
-settings = '${SETTINGS}'.split()
+raw = '${raw_dir}'
+settings = '${settings}'.split()
 ccs = [int(c) for c in '${CONCURRENCY_LEVELS}'.split()]
 labels = {'vanilla_sglang': 'Vanilla SGLang', 'laps': 'LAPS'}
 def load(s, cc):
@@ -131,10 +118,55 @@ for cc in ccs:
 lines.append(row)
 text = '\n'.join(lines)
 print(text)
-with open('${RESULTS_DIR}/summary.txt','w') as f: f.write(text)
+with open('${results_dir}/summary.txt','w') as f: f.write(text)
 "
+}
+
+trap cleanup EXIT
+
+# ───────────────────────── run models ─────────────────────────
+
+PASSED=0
+FAILED=0
+
+for model_size in $MODELS; do
+    case "$model_size" in
+        0.5b|0.5B) MODEL="Qwen/Qwen2.5-0.5B"; MODEL_SHORT="0.5b" ;;
+        3b|3B)     MODEL="Qwen/Qwen2.5-3B";   MODEL_SHORT="3b" ;;
+        7b|7B)     MODEL="Qwen/Qwen2.5-7B";   MODEL_SHORT="7b" ;;
+        *)
+            echo "[ERROR] Unknown model: ${model_size} (valid: 0.5b, 3b, 7b)"
+            FAILED=$((FAILED + 1))
+            continue
+            ;;
+    esac
+
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    RESULTS_DIR="${SCRIPT_DIR}/results_${MODEL_SHORT}_1gpu_${TIMESTAMP}"
+    RAW_DIR="${RESULTS_DIR}/raw"
+    mkdir -p "$RAW_DIR"
+
+    echo ""
+    echo "============================================================"
+    echo "  Single GPU Benchmark: ${MODEL} (${MODEL_SHORT})"
+    echo "  GPU:     ${GPU}"
+    echo "  Prompts: ${NUM_PROMPTS}"
+    echo "  Results: ${RESULTS_DIR}"
+    echo "  Time:    $(date)"
+    echo "============================================================"
+
+    run_setting "vanilla_sglang"
+    run_setting "laps" --enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph --enable-laps-scheduler --laps-length-threshold 256
+
+    generate_summary "${RESULTS_DIR}"
+
+    echo ""
+    echo "  ${MODEL_SHORT}: Done → ${RESULTS_DIR}/summary.txt"
+    PASSED=$((PASSED + 1))
+done
 
 echo ""
 echo "============================================================"
-echo "  Done: ${RESULTS_DIR}/summary.txt"
+echo "  All done. Passed: ${PASSED}, Failed: ${FAILED}"
+echo "  Time: $(date)"
 echo "============================================================"
