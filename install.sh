@@ -9,8 +9,8 @@
 #   ENV_NAME=my_env bash install.sh  # custom env name
 #
 # Prerequisites:
-#   - conda (miniconda or anaconda)
 #   - NVIDIA GPU with CUDA drivers installed
+#   - conda is auto-installed if missing
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-laps}"
@@ -25,8 +25,15 @@ echo "============================================================"
 
 # ── Check prerequisites ──────────────────────────────────────────
 if ! command -v conda &>/dev/null; then
-    echo "ERROR: conda not found. Please install miniconda or anaconda first."
-    exit 1
+    echo "conda not found. Installing Miniconda..."
+    MINICONDA_DIR="${HOME}/miniconda3"
+    MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+    curl -fsSL -o /tmp/miniconda.sh "${MINICONDA_URL}"
+    bash /tmp/miniconda.sh -b -p "${MINICONDA_DIR}"
+    rm -f /tmp/miniconda.sh
+    eval "$("${MINICONDA_DIR}/bin/conda" shell.bash hook)"
+    conda init bash >/dev/null 2>&1 || true
+    echo "  Miniconda installed to ${MINICONDA_DIR}"
 fi
 
 if ! nvidia-smi &>/dev/null; then
