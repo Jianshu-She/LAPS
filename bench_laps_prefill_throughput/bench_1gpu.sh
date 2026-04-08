@@ -167,7 +167,7 @@ for model_size in $MODELS; do
     echo "============================================================"
 
     run_setting "vanilla_sglang"
-    run_setting "laps" --enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph --enable-laps-scheduler --laps-length-threshold 256
+    run_setting "laps" --enable-piecewise-cuda-graph --enable-batch-prefill-cuda-graph
 
     generate_summary "${RESULTS_DIR}"
 
