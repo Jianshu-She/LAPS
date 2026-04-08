@@ -7,6 +7,17 @@
 #   bash bench_1gpu.sh 0.5b 3b    # run 0.5B and 3B
 set -uo pipefail
 
+# ───────────────────────── auto-detect conda env ─────────────────────────
+
+if [ -z "${CUDA_HOME:-}" ]; then
+    LAPS_PREFIX="${CONDA_PREFIX:-$(conda run -n laps printenv CONDA_PREFIX 2>/dev/null || true)}"
+    if [ -n "${LAPS_PREFIX}" ] && [ -d "${LAPS_PREFIX}" ]; then
+        export CUDA_HOME="${LAPS_PREFIX}"
+        export PATH="${LAPS_PREFIX}/bin:${PATH}"
+        export LD_LIBRARY_PATH="${LAPS_PREFIX}/lib:${LAPS_PREFIX}/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH:-}"
+    fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATASET="$(cd "$(dirname "$0")/.." && pwd)/data/lmsys_chat_10k.jsonl"
 PORT=30300
